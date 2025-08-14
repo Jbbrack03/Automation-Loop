@@ -873,3 +873,131 @@ class TestGetLatestStatus:
         
         # Verify that None is returned when .claude directory doesn't exist
         assert result is None, f"Expected None when .claude directory doesn't exist, got: {result}"
+
+
+class TestHookConfiguration:
+    """Test suite for hook configuration file setup and validation."""
+    
+    def test_claude_settings_local_json_exists_and_contains_valid_json(self, tmp_path, monkeypatch):
+        """
+        Test that .claude/settings.local.json exists and contains valid JSON structure.
+        
+        This test verifies that Task 6.1: Create Hook Configuration File has been completed.
+        The test checks that:
+        1. The .claude/settings.local.json file exists
+        2. The file contains valid JSON that can be parsed without errors
+        3. The JSON structure is readable as a dictionary
+        
+        This test will initially fail because .claude/settings.local.json doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory
+        monkeypatch.chdir(tmp_path)
+        
+        # Create .claude directory structure to simulate real project layout
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        
+        # Import and call the function that should ensure the settings file exists
+        from automate_dev import ensure_settings_file
+        ensure_settings_file()
+        
+        # Define the expected path for the hook configuration file
+        settings_file = claude_dir / "settings.local.json"
+        
+        # Verify that the settings.local.json file exists
+        assert settings_file.exists(), f".claude/settings.local.json should exist at {settings_file}"
+        
+        # Verify that the file is readable
+        assert settings_file.is_file(), ".claude/settings.local.json should be a file"
+        assert os.access(str(settings_file), os.R_OK), ".claude/settings.local.json should be readable"
+        
+        # Verify that the file contains valid JSON
+        try:
+            with open(str(settings_file), 'r', encoding='utf-8') as f:
+                json_content = json.load(f)
+        except json.JSONDecodeError as e:
+            pytest.fail(f".claude/settings.local.json should contain valid JSON, but parsing failed: {e}")
+        except FileNotFoundError:
+            pytest.fail(".claude/settings.local.json file should exist")
+        except Exception as e:
+            pytest.fail(f"Unexpected error reading .claude/settings.local.json: {e}")
+        
+        # Verify that the parsed JSON is a dictionary (the expected top-level structure)
+        assert isinstance(json_content, dict), f".claude/settings.local.json should contain a JSON object (dict), got: {type(json_content)}"
+    
+    def test_stop_hook_configuration_is_present_and_correct(self, tmp_path, monkeypatch):
+        """
+        Test that .claude/settings.local.json contains the correct Stop hook configuration.
+        
+        This test verifies that Task 6.2: Add Stop Hook Configuration has been completed.
+        The test checks that the settings.local.json file contains the exact hook structure:
+        {
+          "hooks": {
+            "Stop": [{
+              "hooks": [{
+                "type": "command",
+                "command": "touch .claude/signal_task_complete"
+              }]
+            }]
+          }
+        }
+        
+        This test will initially fail because the current file only contains an empty JSON object.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory
+        monkeypatch.chdir(tmp_path)
+        
+        # Create .claude directory structure to simulate real project layout
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        
+        # Import and call the function that should ensure the settings file exists with Stop hook
+        from automate_dev import ensure_settings_file
+        ensure_settings_file()
+        
+        # Define the expected path for the hook configuration file
+        settings_file = claude_dir / "settings.local.json"
+        
+        # Verify that the settings.local.json file exists
+        assert settings_file.exists(), f".claude/settings.local.json should exist at {settings_file}"
+        
+        # Read and parse the JSON content
+        try:
+            with open(str(settings_file), 'r', encoding='utf-8') as f:
+                json_content = json.load(f)
+        except json.JSONDecodeError as e:
+            pytest.fail(f".claude/settings.local.json should contain valid JSON, but parsing failed: {e}")
+        except FileNotFoundError:
+            pytest.fail(".claude/settings.local.json file should exist")
+        
+        # Verify that the hooks section exists
+        assert "hooks" in json_content, "settings.local.json should contain a 'hooks' section"
+        hooks_section = json_content["hooks"]
+        assert isinstance(hooks_section, dict), "The 'hooks' section should be a dictionary"
+        
+        # Verify that the Stop hook exists
+        assert "Stop" in hooks_section, "The hooks section should contain a 'Stop' hook"
+        stop_hook = hooks_section["Stop"]
+        assert isinstance(stop_hook, list), "The Stop hook should be a list"
+        assert len(stop_hook) == 1, "The Stop hook should contain exactly one hook configuration"
+        
+        # Verify the Stop hook configuration structure
+        stop_hook_config = stop_hook[0]
+        assert isinstance(stop_hook_config, dict), "Stop hook configuration should be a dictionary"
+        assert "hooks" in stop_hook_config, "Stop hook configuration should contain a 'hooks' array"
+        
+        inner_hooks = stop_hook_config["hooks"]
+        assert isinstance(inner_hooks, list), "Inner hooks should be a list"
+        assert len(inner_hooks) == 1, "Inner hooks should contain exactly one command"
+        
+        # Verify the command configuration
+        command_config = inner_hooks[0]
+        assert isinstance(command_config, dict), "Command configuration should be a dictionary"
+        assert "type" in command_config, "Command configuration should have a 'type' field"
+        assert "command" in command_config, "Command configuration should have a 'command' field"
+        
+        # Verify the exact values
+        assert command_config["type"] == "command", f"Expected command type 'command', got: {command_config['type']}"
+        assert command_config["command"] == "touch .claude/signal_task_complete", f"Expected command 'touch .claude/signal_task_complete', got: {command_config['command']}"

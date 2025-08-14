@@ -21,6 +21,26 @@ CLAUDE_FILE = "CLAUDE.md"
 # Signal file constant
 SIGNAL_FILE = ".claude/signal_task_complete"
 
+# Settings file constant  
+SETTINGS_FILE = ".claude/settings.local.json"
+
+# Default settings configuration structure
+# This configuration sets up the Stop hook to create a signal file when Claude sessions end
+# The hook enables reliable detection of task completion in automated workflows
+DEFAULT_SETTINGS_CONFIG = {
+    "hooks": {
+        "Stop": [{
+            "hooks": [{
+                "type": "command",
+                "command": f"touch {SIGNAL_FILE}"
+            }]
+        }]
+    }
+}
+
+# Serialize the configuration to JSON string for file writing
+DEFAULT_SETTINGS_JSON = json.dumps(DEFAULT_SETTINGS_CONFIG, indent=2)
+
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_MISSING_CRITICAL_FILE = 1
@@ -68,6 +88,39 @@ def validate_optional_files(files: List[str]) -> List[str]:
         List of missing file paths
     """
     return [f for f in files if not check_file_exists(f)]
+
+
+def ensure_settings_file() -> None:
+    """Ensure .claude/settings.local.json exists with valid JSON structure.
+    
+    Creates the .claude directory if it doesn't exist and initializes the
+    settings file with an empty JSON object ({}) if the file is missing.
+    
+    The function handles file operation errors gracefully by following the
+    codebase pattern of degrading gracefully rather than failing fast.
+    
+    Raises:
+        No exceptions are raised; file operation errors are handled gracefully
+        to ensure the workflow can continue even if settings creation fails.
+    """
+    settings_path = Path(SETTINGS_FILE)
+    
+    # Create .claude directory if it doesn't exist
+    try:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+    except (OSError, IOError) as e:
+        # Graceful degradation - continue without failing the workflow
+        # This follows the codebase pattern for file operation error handling
+        return
+    
+    # Create settings file with minimal valid JSON if it doesn't exist
+    if not settings_path.exists():
+        try:
+            settings_path.write_text(DEFAULT_SETTINGS_JSON, encoding="utf-8")
+        except (OSError, IOError) as e:
+            # Graceful degradation - continue without failing the workflow
+            # File creation may fail due to permissions or disk space
+            return
 
 
 class TaskTracker:
@@ -399,6 +452,9 @@ def get_latest_status(debug: bool = False) -> Optional[str]:
 
 def main():
     """Main orchestrator function with prerequisite file checks."""
+    # Ensure settings file exists
+    ensure_settings_file()
+    
     # Define critical and optional files
     critical_files = [IMPLEMENTATION_PLAN_FILE]
     optional_files = [PRD_FILE, CLAUDE_FILE]
