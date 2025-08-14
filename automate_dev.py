@@ -4,11 +4,13 @@ This module provides the main orchestrator function that manages prerequisite fi
 validation for the automated development workflow system.
 """
 
+import glob
 import json
 import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Constants for prerequisite files
@@ -297,6 +299,102 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
             result.stdout,
             e.pos
         ) from e
+
+
+def _cleanup_status_files(status_files: List[Path], debug: bool = False) -> None:
+    """Clean up all status files after reading.
+    
+    Args:
+        status_files: List of status file paths to delete
+        debug: Whether to enable debug logging for troubleshooting
+    """
+    for status_file in status_files:
+        try:
+            status_file.unlink()
+            if debug:
+                print(f"Debug: Cleaned up status file: {status_file}")
+        except OSError as e:
+            # Continue if file deletion fails, but log if debug enabled
+            if debug:
+                print(f"Warning: Failed to delete status file {status_file}: {e}")
+
+
+def get_latest_status(debug: bool = False) -> Optional[str]:
+    """Get the latest status from MCP server status files.
+    
+    Finds all status_*.json files in .claude/ directory, reads the newest file
+    based on lexicographic sort (timestamp-based), deletes all status files 
+    after reading, and returns the status value.
+    
+    The function uses lexicographic sorting to identify the newest file because
+    status files use timestamp format YYYYMMDD_HHMMSS which sorts correctly
+    alphabetically.
+    
+    Args:
+        debug: Whether to enable debug logging for troubleshooting
+    
+    Returns:
+        The status value from the newest status file, or None if no files exist
+        or if any error occurs during file operations
+        
+    Note:
+        This function deletes ALL status files after reading to prevent stale
+        status confusion. This is critical for the workflow state management.
+    """
+    # Find all status files using pathlib for better cross-platform compatibility
+    claude_dir = Path('.claude')
+    
+    # Handle missing .claude directory gracefully
+    if not claude_dir.exists():
+        if debug:
+            print("Debug: .claude directory does not exist")
+        return None
+    
+    # Find all status files
+    status_files = list(claude_dir.glob('status_*.json'))
+    
+    # Return None if no status files exist
+    if not status_files:
+        if debug:
+            print("Debug: No status files found in .claude directory")
+        return None
+    
+    # Sort files lexicographically (newest timestamp will be last)
+    status_files.sort(key=lambda p: p.name)
+    newest_file = status_files[-1]
+    
+    if debug:
+        print(f"Debug: Found {len(status_files)} status files, reading newest: {newest_file}")
+    
+    # Read and parse the newest file
+    try:
+        with open(newest_file, 'r', encoding='utf-8') as f:
+            status_data = json.load(f)
+        
+        if debug:
+            print(f"Debug: Successfully read JSON from {newest_file}")
+            
+    except json.JSONDecodeError as e:
+        # JSON parsing error - return None for graceful degradation
+        if debug:
+            print(f"Debug: JSON parsing error in {newest_file}: {e}")
+        return None
+    except (IOError, OSError) as e:
+        # File I/O error - return None for graceful degradation
+        if debug:
+            print(f"Debug: File I/O error reading {newest_file}: {e}")
+        return None
+    
+    # Extract status value
+    status = status_data.get('status')
+    
+    if debug:
+        print(f"Debug: Extracted status: {status}")
+    
+    # Clean up all status files after successful reading
+    _cleanup_status_files(status_files, debug=debug)
+    
+    return status
 
 
 def main():

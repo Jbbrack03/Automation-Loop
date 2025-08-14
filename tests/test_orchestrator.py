@@ -9,6 +9,7 @@ import pytest
 import sys
 import os
 import json
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 class TestOrchestratorScriptExecution:
@@ -720,3 +721,155 @@ class TestClaudeCommandExecution:
         assert isinstance(result, dict), "Result should still be a dictionary even on error"
         assert result["error"] == "Command failed", "Error information should be parsed from JSON"
         assert result["details"] == "Invalid command syntax", "Error details should be accessible"
+
+
+class TestGetLatestStatus:
+    """Test suite for the get_latest_status function and MCP server status file processing."""
+    
+    def test_get_latest_status_reads_newest_file_and_deletes_all_status_files(self, tmp_path, monkeypatch):
+        """
+        Test that get_latest_status reads the newest status file and deletes all status files.
+        
+        This test verifies the complete lifecycle of the get_latest_status function:
+        1. Create multiple dummy status_*.json files with different timestamps
+        2. Verify that the function reads the content of the *newest* file
+        3. Verify that *all* status files are deleted after reading
+        4. Verify that the function returns the correct status value from the JSON
+        
+        The function should:
+        - Find all status_*.json files in .claude/ directory using glob pattern
+        - Sort them to identify the newest file (lexicographic sort works with timestamp format)
+        - Read the newest file and parse its JSON content
+        - Extract the 'status' field from the JSON
+        - Delete all status files after successful reading
+        - Return the status value
+        
+        This test will initially fail because the get_latest_status function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory
+        monkeypatch.chdir(tmp_path)
+        
+        # Create .claude directory structure
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        
+        # Create multiple status files with different timestamps (newest should be read)
+        # Using timestamp format that sorts lexicographically (newer timestamps sort later)
+        status_files_data = {
+            "status_20240101_120000.json": {
+                "status": "validation_failed",
+                "details": "Old validation failure",
+                "timestamp": "2024-01-01T12:00:00Z"
+            },
+            "status_20240101_130000.json": {
+                "status": "project_incomplete",
+                "details": "Middle status update",
+                "timestamp": "2024-01-01T13:00:00Z"
+            },
+            "status_20240101_140000.json": {
+                "status": "validation_passed",
+                "details": "Latest validation success",
+                "timestamp": "2024-01-01T14:00:00Z"
+            },
+            "status_20240101_135500.json": {
+                "status": "project_complete",
+                "details": "Another status file (not newest)",
+                "timestamp": "2024-01-01T13:55:00Z"
+            }
+        }
+        
+        # Write all status files to .claude directory
+        for filename, data in status_files_data.items():
+            status_file = claude_dir / filename
+            status_file.write_text(json.dumps(data), encoding="utf-8")
+        
+        # Verify all files were created
+        created_files = list(claude_dir.glob("status_*.json"))
+        assert len(created_files) == 4, f"Expected 4 status files, but found {len(created_files)}"
+        
+        # Import the function to test
+        from automate_dev import get_latest_status
+        
+        # Call the function
+        result = get_latest_status()
+        
+        # Verify that the newest file's content was read correctly
+        # The newest file should be "status_20240101_140000.json" with status "validation_passed"
+        assert result == "validation_passed", f"Expected status 'validation_passed' from newest file, got: {result}"
+        
+        # Verify that ALL status files were deleted after reading
+        remaining_files = list(claude_dir.glob("status_*.json"))
+        assert len(remaining_files) == 0, f"Expected all status files to be deleted, but found {len(remaining_files)} remaining: {[f.name for f in remaining_files]}"
+        
+        # Verify the .claude directory still exists (only status files should be deleted)
+        assert claude_dir.exists(), ".claude directory should still exist after status file cleanup"
+    
+    def test_get_latest_status_returns_none_when_no_status_files_exist(self, tmp_path, monkeypatch):
+        """
+        Test that get_latest_status returns None when no status files exist.
+        
+        Given a .claude directory with no status_*.json files,
+        when get_latest_status is called,
+        then it should return None to indicate no status is available.
+        
+        This test will initially fail because the get_latest_status function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory
+        monkeypatch.chdir(tmp_path)
+        
+        # Create .claude directory structure without any status files
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        
+        # Create some other files that should be ignored
+        (claude_dir / "other_file.txt").write_text("not a status file")
+        (claude_dir / "config.json").write_text('{"setting": "value"}')
+        
+        # Verify no status files exist
+        status_files = list(claude_dir.glob("status_*.json"))
+        assert len(status_files) == 0, f"Expected no status files, but found {len(status_files)}"
+        
+        # Import the function to test
+        from automate_dev import get_latest_status
+        
+        # Call the function
+        result = get_latest_status()
+        
+        # Verify that None is returned when no status files exist
+        assert result is None, f"Expected None when no status files exist, got: {result}"
+        
+        # Verify that other files were not affected
+        assert (claude_dir / "other_file.txt").exists(), "Non-status files should not be affected"
+        assert (claude_dir / "config.json").exists(), "Non-status files should not be affected"
+    
+    def test_get_latest_status_handles_claude_directory_missing(self, tmp_path, monkeypatch):
+        """
+        Test that get_latest_status handles gracefully when .claude directory is missing.
+        
+        Given a working directory without a .claude subdirectory,
+        when get_latest_status is called,
+        then it should return None without raising an exception.
+        
+        This test will initially fail because the get_latest_status function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory
+        monkeypatch.chdir(tmp_path)
+        
+        # Ensure .claude directory does NOT exist
+        claude_dir = tmp_path / ".claude"
+        if claude_dir.exists():
+            claude_dir.rmdir()
+        
+        assert not claude_dir.exists(), ".claude directory should not exist for this test"
+        
+        # Import the function to test
+        from automate_dev import get_latest_status
+        
+        # Call the function - should not raise an exception
+        result = get_latest_status()
+        
+        # Verify that None is returned when .claude directory doesn't exist
+        assert result is None, f"Expected None when .claude directory doesn't exist, got: {result}"
