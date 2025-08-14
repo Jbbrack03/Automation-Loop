@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+.vscode/
+.idea/
+.claude/logs/
+.claude/signal_task_complete
+.claude/status_*.json
+.claude/settings.local.json

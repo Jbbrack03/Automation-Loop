@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "automation": {
+      "command": "node",
+      "args": ["/Users/jbbrack03/Claude_Development_Loop/mcp-automation-server/dist/index.js"],
+      "env": {}
+    }
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'WORKSPACE=\"${CLAUDE_PROJECT_DIR:-$(pwd)}\"; echo \"[Claude Automation] Claude response completed in workspace: $WORKSPACE\" >&2; echo \"[Claude Automation] Creating stop signal file...\" >&2; mkdir -p \"$WORKSPACE/.claude\" && touch \"$WORKSPACE/.claude/stop_signal\" && echo \"[Claude Automation] Stop signal created: $WORKSPACE/.claude/stop_signal\" >&2; echo \"[Claude Automation] Logging activity...\" >&2; echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) Claude response completed\" >> \"$WORKSPACE/.claude/activity.log\"'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
