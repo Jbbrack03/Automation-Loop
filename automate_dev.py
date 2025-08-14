@@ -4,8 +4,11 @@ This module provides the main orchestrator function that manages prerequisite fi
 validation for the automated development workflow system.
 """
 
+import json
 import os
+import subprocess
 import sys
+import time
 from typing import Dict, List, Optional, Tuple
 
 # Constants for prerequisite files
@@ -13,12 +16,19 @@ IMPLEMENTATION_PLAN_FILE = "Implementation Plan.md"
 PRD_FILE = "PRD.md"
 CLAUDE_FILE = "CLAUDE.md"
 
+# Signal file constant
+SIGNAL_FILE = ".claude/signal_task_complete"
+
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_MISSING_CRITICAL_FILE = 1
 
 # Failure tracking constants
 MAX_FIX_ATTEMPTS = 3
+
+# Signal file waiting constants
+SIGNAL_WAIT_SLEEP_INTERVAL = 0.1  # seconds between signal file checks
+SIGNAL_WAIT_TIMEOUT = 30.0  # maximum seconds to wait for signal file
 
 
 def check_file_exists(filepath: str) -> bool:
@@ -151,6 +161,142 @@ class TaskTracker:
         # Remove the task from the dictionary if it exists
         if task in self.fix_attempts:
             del self.fix_attempts[task]
+
+
+def _wait_for_signal_file(signal_file_path: str, timeout: float = SIGNAL_WAIT_TIMEOUT, 
+                         sleep_interval: float = SIGNAL_WAIT_SLEEP_INTERVAL,
+                         debug: bool = False) -> None:
+    """Wait for signal file to appear with timeout and error handling.
+    
+    This helper function implements robust signal file waiting with timeout protection
+    and optional debug logging. It's used by run_claude_command to wait for Claude CLI
+    command completion signals.
+    
+    Args:
+        signal_file_path: Path to the signal file to wait for
+        timeout: Maximum seconds to wait before raising TimeoutError
+        sleep_interval: Seconds to sleep between file existence checks
+        debug: Whether to print debug information during waiting
+        
+    Raises:
+        TimeoutError: If signal file doesn't appear within timeout period
+        OSError: If there are file system access errors during cleanup
+        
+    Note:
+        This function will remove the signal file after it appears to clean up
+        the file system state for subsequent command executions.
+    """
+    if debug:
+        print(f"Waiting for signal file: {signal_file_path}")
+    
+    start_time = time.time()
+    elapsed_time = 0.0
+    
+    while elapsed_time < timeout:
+        if os.path.exists(signal_file_path):
+            if debug:
+                print(f"Signal file appeared after {elapsed_time:.1f}s")
+            
+            try:
+                os.remove(signal_file_path)
+                if debug:
+                    print("Signal file cleaned up successfully")
+                return
+            except OSError as e:
+                # Log the error but don't fail - the command may have completed successfully
+                if debug:
+                    print(f"Warning: Failed to remove signal file: {e}")
+                return
+        
+        time.sleep(sleep_interval)
+        elapsed_time = time.time() - start_time
+    
+    # Timeout reached - this indicates a potential issue with Claude CLI execution
+    raise TimeoutError(f"Signal file {signal_file_path} did not appear within {timeout}s timeout")
+
+
+def run_claude_command(command: str, args: Optional[List[str]] = None, 
+                      debug: bool = False) -> Dict:
+    """Execute a Claude CLI command and return parsed JSON output.
+    
+    This function executes Claude CLI commands with robust signal file waiting and
+    comprehensive error handling. It uses the Stop hook configuration in Claude CLI
+    to detect command completion via signal file creation.
+    
+    Args:
+        command: The Claude command to execute (e.g., "/continue", "/validate")
+        args: Optional additional arguments to append to the command array
+        debug: Whether to enable debug logging for troubleshooting
+        
+    Returns:
+        Parsed JSON response from Claude CLI as a dictionary
+        
+    Raises:
+        subprocess.SubprocessError: If Claude CLI execution fails
+        json.JSONDecodeError: If Claude CLI output is not valid JSON
+        TimeoutError: If signal file doesn't appear within timeout period
+        
+    Note:
+        This function relies on the Stop hook configuration in .claude/settings.local.json
+        which creates a signal file when Claude CLI commands complete. The signal file
+        waiting mechanism provides reliable completion detection for automation workflows.
+    """
+    if debug:
+        print(f"Executing Claude command: {command}")
+        if args:
+            print(f"Additional arguments: {args}")
+    
+    # Construct the base command array with required flags
+    command_array = [
+        "claude",
+        "-p", command,
+        "--output-format", "json",
+        "--dangerously-skip-permissions"
+    ]
+    
+    # Append additional args if provided
+    if args:
+        command_array.extend(args)
+    
+    try:
+        # Execute the Claude CLI command
+        if debug:
+            print(f"Running subprocess: {' '.join(command_array)}")
+        
+        result = subprocess.run(
+            command_array,
+            capture_output=True,
+            text=True,
+            check=False  # Don't raise on non-zero exit codes
+        )
+        
+        if debug:
+            print(f"Subprocess completed with return code: {result.returncode}")
+            if result.stderr:
+                print(f"Subprocess stderr: {result.stderr}")
+        
+    except subprocess.SubprocessError as e:
+        raise subprocess.SubprocessError(f"Failed to execute Claude CLI command '{command}': {e}") from e
+    
+    # Wait for signal file to appear (indicates command completion)
+    try:
+        _wait_for_signal_file(SIGNAL_FILE, debug=debug)
+    except TimeoutError as e:
+        # Re-raise with additional context about the command that timed out
+        raise TimeoutError(f"Claude command '{command}' timed out: {e}") from e
+    
+    # Parse JSON output from stdout
+    try:
+        if debug:
+            print(f"Parsing JSON output: {result.stdout[:200]}{'...' if len(result.stdout) > 200 else ''}")
+        
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(
+            f"Failed to parse Claude CLI JSON output for command '{command}': {e.msg}",
+            result.stdout,
+            e.pos
+        ) from e
 
 
 def main():

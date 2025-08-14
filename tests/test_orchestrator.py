@@ -8,7 +8,8 @@ Following the red-green-refactor cycle, these tests are written before implement
 import pytest
 import sys
 import os
-from unittest.mock import patch
+import json
+from unittest.mock import patch, MagicMock
 
 class TestOrchestratorScriptExecution:
     """Test suite for basic orchestrator script functionality."""
@@ -495,3 +496,227 @@ class TestTaskTrackerFailureTracking:
         
         # Verify that the dictionary is still intact
         assert test_task_2 in tracker.fix_attempts, "Task 2 should still be in fix_attempts after attempting to reset non-existent task"
+
+
+class TestClaudeCommandExecution:
+    """Test suite for Claude CLI command execution functionality."""
+    
+    @patch('os.remove')
+    @patch('os.path.exists')
+    def test_run_claude_command_waits_for_signal_file_and_cleans_up(self, mock_exists, mock_remove):
+        """
+        Test that run_claude_command waits for signal_task_complete file and cleans up after.
+        
+        This test verifies the signal file waiting logic that enables reliable completion detection.
+        The function should:
+        1. Execute the Claude command
+        2. Wait for ".claude/signal_task_complete" file to exist before returning
+        3. Clean up (remove) the signal file after the loop breaks
+        
+        This test will initially fail because the signal file waiting logic doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Mock subprocess.run to return a successful result with JSON output
+        with patch('subprocess.run') as mock_subprocess_run:
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_result.stdout = '{"status": "success", "output": "Command completed"}'
+            mock_result.stderr = ""
+            mock_subprocess_run.return_value = mock_result
+            
+            # Simulate signal file appearing after some iterations
+            # First few calls return False (file doesn't exist), then True (file exists)
+            mock_exists.side_effect = [False, False, True]
+            
+            # Import the function to test
+            from automate_dev import run_claude_command
+            
+            # Call the function
+            test_command = "/continue"
+            result = run_claude_command(test_command)
+            
+            # Verify subprocess.run was called with correct command array
+            mock_subprocess_run.assert_called_once()
+            call_args = mock_subprocess_run.call_args
+            command_array = call_args[0][0]
+            expected_command = [
+                "claude",
+                "-p", test_command,
+                "--output-format", "json",
+                "--dangerously-skip-permissions"
+            ]
+            assert command_array == expected_command, f"Expected command array {expected_command}, got {command_array}"
+            
+            # Verify that os.path.exists was called multiple times to check for signal file
+            expected_signal_path = ".claude/signal_task_complete"
+            mock_exists.assert_called_with(expected_signal_path)
+            assert mock_exists.call_count == 3, f"Expected 3 calls to os.path.exists, got {mock_exists.call_count}"
+            
+            # Verify that os.remove was called to clean up the signal file
+            mock_remove.assert_called_once_with(expected_signal_path)
+            
+            # Verify the function returns parsed JSON
+            assert isinstance(result, dict), "run_claude_command should return parsed JSON as dict"
+            assert result["status"] == "success", "JSON should be correctly parsed"
+            assert result["output"] == "Command completed", "JSON content should be preserved"
+    
+    @patch('os.remove')
+    @patch('os.path.exists')
+    @patch('subprocess.run')
+    def test_run_claude_command_constructs_correct_command_array(self, mock_subprocess_run, mock_exists, mock_remove):
+        """
+        Test that run_claude_command constructs the correct Claude CLI command array.
+        
+        Given a command string to execute via Claude CLI,
+        when run_claude_command is called,
+        then it should construct the proper command array with required flags
+        and call subprocess.run with the correct parameters.
+        
+        This test will initially fail because the run_claude_command function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Mock subprocess.run to return a successful result with JSON output
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"status": "success", "output": "Command executed successfully"}'
+        mock_result.stderr = ""
+        mock_subprocess_run.return_value = mock_result
+        
+        # Mock signal file to exist immediately (no waiting)
+        mock_exists.return_value = True
+        
+        # Import the function to test
+        from automate_dev import run_claude_command
+        
+        # Define test command to execute
+        test_command = "/continue"
+        
+        # Call the function
+        result = run_claude_command(test_command)
+        
+        # Verify subprocess.run was called with correct command array
+        mock_subprocess_run.assert_called_once()
+        call_args = mock_subprocess_run.call_args
+        
+        # Check the command array (first positional argument)
+        command_array = call_args[0][0]
+        expected_command = [
+            "claude",
+            "-p", test_command,
+            "--output-format", "json",
+            "--dangerously-skip-permissions"
+        ]
+        
+        assert command_array == expected_command, f"Expected command array {expected_command}, got {command_array}"
+        
+        # Verify subprocess.run was called with correct keyword arguments
+        kwargs = call_args[1]
+        assert kwargs.get('capture_output') is True, "capture_output should be True"
+        assert kwargs.get('text') is True, "text should be True"
+        assert kwargs.get('check') is False, "check should be False to handle errors manually"
+        
+        # Verify the function returns parsed JSON
+        assert isinstance(result, dict), "run_claude_command should return parsed JSON as dict"
+        assert result["status"] == "success", "JSON should be correctly parsed"
+        assert result["output"] == "Command executed successfully", "JSON content should be preserved"
+    
+    @patch('os.remove')
+    @patch('os.path.exists')
+    @patch('subprocess.run')
+    def test_run_claude_command_parses_json_output_correctly(self, mock_subprocess_run, mock_exists, mock_remove):
+        """
+        Test that run_claude_command correctly parses JSON output from Claude CLI.
+        
+        Given various JSON responses from Claude CLI,
+        when run_claude_command is called,
+        then it should correctly parse the JSON and return the parsed data structure.
+        
+        This test will initially fail because the run_claude_command function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Test complex JSON response
+        complex_json_response = {
+            "command": "/validate",
+            "status": "completed",
+            "results": {
+                "tests_passed": 15,
+                "tests_failed": 2,
+                "errors": ["TypeError in test_function", "AssertionError in test_validation"]
+            },
+            "metadata": {
+                "execution_time": "2.3s",
+                "timestamp": "2024-01-01T12:00:00Z"
+            }
+        }
+        
+        # Mock subprocess.run to return complex JSON
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps(complex_json_response)
+        mock_result.stderr = ""
+        mock_subprocess_run.return_value = mock_result
+        
+        # Mock signal file to exist immediately (no waiting)
+        mock_exists.return_value = True
+        
+        # Import the function to test
+        from automate_dev import run_claude_command
+        
+        # Call the function
+        result = run_claude_command("/validate")
+        
+        # Verify the JSON was correctly parsed and all nested data is accessible
+        assert isinstance(result, dict), "Result should be a dictionary"
+        assert result["command"] == "/validate", "Top-level fields should be accessible"
+        assert result["status"] == "completed", "Status should be correctly parsed"
+        
+        # Verify nested objects are correctly parsed
+        assert isinstance(result["results"], dict), "Nested objects should remain as dicts"
+        assert result["results"]["tests_passed"] == 15, "Nested integer values should be preserved"
+        assert result["results"]["tests_failed"] == 2, "Nested integer values should be preserved"
+        assert isinstance(result["results"]["errors"], list), "Nested arrays should remain as lists"
+        assert len(result["results"]["errors"]) == 2, "Array length should be preserved"
+        assert "TypeError in test_function" in result["results"]["errors"], "Array contents should be preserved"
+        
+        # Verify deeply nested objects
+        assert isinstance(result["metadata"], dict), "Deeply nested objects should be accessible"
+        assert result["metadata"]["execution_time"] == "2.3s", "Deeply nested values should be preserved"
+    
+    @patch('os.remove')
+    @patch('os.path.exists')
+    @patch('subprocess.run')
+    def test_run_claude_command_handles_claude_cli_errors_gracefully(self, mock_subprocess_run, mock_exists, mock_remove):
+        """
+        Test that run_claude_command handles Claude CLI errors gracefully.
+        
+        Given a Claude CLI command that fails with non-zero exit code,
+        when run_claude_command is called,
+        then it should handle the error gracefully and return appropriate error information.
+        
+        This test will initially fail because the run_claude_command function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Mock subprocess.run to return an error response
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = '{"error": "Command failed", "details": "Invalid command syntax"}'
+        mock_result.stderr = "Claude CLI Error: Command not recognized"
+        mock_subprocess_run.return_value = mock_result
+        
+        # Mock signal file to exist immediately (no waiting)
+        mock_exists.return_value = True
+        
+        # Import the function to test
+        from automate_dev import run_claude_command
+        
+        # Call the function with an invalid command
+        result = run_claude_command("/invalid-command")
+        
+        # Verify subprocess.run was called
+        mock_subprocess_run.assert_called_once()
+        
+        # Verify the function still attempts to parse JSON even on error
+        # (Claude CLI might return structured error information as JSON)
+        assert isinstance(result, dict), "Result should still be a dictionary even on error"
+        assert result["error"] == "Command failed", "Error information should be parsed from JSON"
+        assert result["details"] == "Invalid command syntax", "Error details should be accessible"
