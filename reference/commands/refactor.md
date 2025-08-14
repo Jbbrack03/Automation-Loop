@@ -20,11 +20,18 @@ Review this project and surface all opportunities for refactoring. Your examinat
 - GitHub workflows (.github directory)
 - Docker files (Dockerfile, docker-compose.yml)
 - Implementation Plan documents
+- .leann directory and files
 
 ## Claude Code Specific Instructions
 - Your job is to identify the opportunities and problems and then create a plan for solving the issues that you found and implementing the opportunities that you identified.
 - Once you've created a plan, add additional phases and tasks to our Implementation Plan document that cover your plan.
 - A separate Agent will actually implement your plan based on the phases and tasks that you add to our Implementation Plan document.
+
+TOOLS AVAILABLE:
+
+- Web Search (search the web for answers)
+- Context7 (search for coding guidelines and samples)
+- LEANN (semantic search of current project structure and project documentation)
 
 ## Constraints
 **DO NOT:**

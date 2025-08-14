@@ -14,8 +14,8 @@
   "passage_sources": [
     {
       "type": "jsonl",
-      "path": "/Users/jbbrack03/Claude_Development_Loop/.leann/indexes/Claude_Development_Loop_422bd5e2/documents.leann.passages.jsonl",
-      "index_path": "/Users/jbbrack03/Claude_Development_Loop/.leann/indexes/Claude_Development_Loop_422bd5e2/documents.leann.passages.idx"
+      "path": "/Users/jbbrack03/Claude_Development_Loop/.leann/indexes/Claude_Development_Loop_v1/documents.leann.passages.jsonl",
+      "index_path": "/Users/jbbrack03/Claude_Development_Loop/.leann/indexes/Claude_Development_Loop_v1/documents.leann.passages.idx"
     }
   ],
   "is_compact": true,

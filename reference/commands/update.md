@@ -70,5 +70,5 @@ Update the implementation plan and perform comprehensive git operations with enh
 
 6. **Update Progress & Memory**:
    - Locate this project's Implementation Plan document and update it by checking off the tasks that you completed during this session. Add short comments if appropriate. Review any unchecked tasks from previous phases and session and determine whether they should be checked off (search LEANN for past implementation information if needed). Check off any items that are truly complete. Our goal is for this document to be a true record of our progress and next steps.
-   - Add our work from this session into LEANN MCP Server index
+   - Build LEANN to add work from this session to the LEANN MCP Server Database
    - Add short status notes to Claude.md
