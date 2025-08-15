@@ -7,7 +7,7 @@ their completion and error conditions.
 import json
 import subprocess
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from config import SIGNAL_FILE, LOGGERS
 from usage_limit import parse_usage_limit_error, calculate_wait_time
@@ -184,7 +184,7 @@ def _execute_claude_subprocess(command_array: List[str], command: str, debug: bo
 
 
 def run_claude_command(command: str, args: Optional[List[str]] = None, 
-                      debug: bool = False) -> Dict:
+                      debug: bool = False) -> Dict[str, Any]:
     """Execute a Claude CLI command and return parsed JSON output.
     
     This function executes Claude CLI commands with robust signal file waiting and

@@ -4,20 +4,22 @@ This module provides functions for waiting on signal files and cleaning them up.
 Signal files are used to detect command completion in the automated workflow.
 """
 
+import logging
 import os
 import time
-from typing import Union
+from pathlib import Path
+from typing import Union, Optional
 
 from config import SIGNAL_WAIT_TIMEOUT, SIGNAL_WAIT_SLEEP_INTERVAL, LOGGERS
 
 
-def _get_logger():
+def _get_logger() -> Optional[logging.Logger]:
     """Get the command executor logger for this module."""
     return LOGGERS.get('command_executor')
 
 
-def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIGNAL_WAIT_TIMEOUT, 
-                        sleep_interval: Union[int, float] = SIGNAL_WAIT_SLEEP_INTERVAL,
+def wait_for_signal_file(signal_file_path: Union[str, Path], timeout: float = SIGNAL_WAIT_TIMEOUT, 
+                        sleep_interval: float = SIGNAL_WAIT_SLEEP_INTERVAL,
                         debug: bool = False) -> None:
     """Wait for signal file to appear with timeout and error handling.
     
@@ -25,7 +27,7 @@ def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIG
     and structured logging. It's used to wait for Claude CLI command completion signals.
     
     Args:
-        signal_file_path: Path to the signal file to wait for
+        signal_file_path: Path to the signal file to wait for (str or Path object)
         timeout: Maximum seconds to wait before raising TimeoutError
         sleep_interval: Seconds to sleep between file existence checks
         debug: Whether to enable debug-level logging
@@ -47,12 +49,12 @@ def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIG
     elapsed_time = 0.0
     
     while elapsed_time < timeout:
-        if os.path.exists(signal_file_path):
+        if os.path.exists(str(signal_file_path)):
             if logger:
                 logger.debug(f"Signal file appeared after {elapsed_time:.1f}s")
             
             try:
-                os.remove(signal_file_path)
+                os.remove(str(signal_file_path))
                 if logger:
                     logger.debug("Signal file cleaned up successfully")
                 return
@@ -72,14 +74,14 @@ def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIG
     raise TimeoutError(error_msg)
 
 
-def cleanup_signal_file(signal_file_path: str) -> None:
+def cleanup_signal_file(signal_file_path: Union[str, Path]) -> None:
     """Clean up a signal file by removing it from the filesystem.
     
     Attempts to delete the signal file. Handles file operation errors gracefully
     to ensure cleanup failures don't break the main workflow.
     
     Args:
-        signal_file_path: Path to the signal file to delete
+        signal_file_path: Path to the signal file to delete (str or Path object)
         
     Note:
         File deletion errors are handled gracefully and logged only.
@@ -88,8 +90,8 @@ def cleanup_signal_file(signal_file_path: str) -> None:
     logger = _get_logger()
     
     try:
-        if os.path.exists(signal_file_path):
-            os.remove(signal_file_path)
+        if os.path.exists(str(signal_file_path)):
+            os.remove(str(signal_file_path))
             if logger:
                 logger.debug(f"Successfully cleaned up signal file: {signal_file_path}")
     except (OSError, FileNotFoundError, PermissionError) as e:

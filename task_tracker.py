@@ -50,6 +50,8 @@ class TaskTracker:
         fix_attempts: Dictionary tracking failure count per task identifier
     """
     
+    fix_attempts: Dict[str, int]
+    
     def __init__(self) -> None:
         """Initialize TaskTracker with failure tracking.
         

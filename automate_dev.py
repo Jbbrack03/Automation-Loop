@@ -402,7 +402,7 @@ def _cleanup_status_files(status_files: List[Path], debug: bool = False) -> None
 
 
 
-def execute_tdd_cycle(command_executor=None, status_getter=None) -> str:
+def execute_tdd_cycle(command_executor: Optional[Callable[[str], Dict[str, Any]]] = None, status_getter: Optional[Callable[[], str]] = None) -> str:
     """Execute the TDD cycle: clear, continue, validate.
     
     Runs the core Test-Driven Development sequence of commands:
@@ -559,7 +559,7 @@ def validate_prerequisites() -> None:
             print(f"Warning: {missing_file} is missing")  # Keep user-facing warning
 
 
-def handle_project_completion(status_getter=None, command_executor=None) -> None:
+def handle_project_completion(status_getter: Optional[Callable[[], str]] = None, command_executor: Optional[Callable[[str], Dict[str, Any]]] = None) -> None:
     """Handle project completion by checking status and entering appropriate workflow.
     
     Checks the current project status and either:
@@ -588,7 +588,7 @@ def handle_project_completion(status_getter=None, command_executor=None) -> None
         return  # For testing - handle mocked sys.exit
 
 
-def execute_refactoring_loop(command_executor=None, status_getter=None) -> None:
+def execute_refactoring_loop(command_executor: Optional[Callable[[str], Dict[str, Any]]] = None, status_getter: Optional[Callable[[], str]] = None) -> None:
     """Execute the refactoring loop until no more refactoring is needed.
     
     This function implements the continuous refactoring workflow:
@@ -784,7 +784,7 @@ def get_latest_status(debug: bool = False) -> Optional[str]:
 
 
 
-def _handle_project_completion_validation(validation_status: str, command_executor=None, status_getter=None) -> None:
+def _handle_project_completion_validation(validation_status: str, command_executor: Optional[Callable[[str], Dict[str, Any]]] = None, status_getter: Optional[Callable[[], str]] = None) -> None:
     """Handle final validation when all tasks are complete.
     
     Manages the transition from task processing to refactoring workflow,

@@ -5,6 +5,28 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-08-15
+
+### Features
+- **Comprehensive Type Hints Implementation** (Phase 12 Task 4 complete)
+  - Added complete type hints to all major functions in `automate_dev.py`
+  - Enhanced TaskTracker class with class-level type annotations
+  - Improved signal_handler.py with Path type support and Optional types
+  - Implemented TypedDict for complex structures in usage_limit.py
+  - Added new utility function `parse_timestamp_to_datetime` with full type hints
+  - Created comprehensive test suite for type hint validation
+
+### Improved
+- **Enhanced Type Safety**
+  - Added TypedDict classes: `UsageLimitResult`, `UsageLimitUnixResult`, `UsageLimitNaturalResult`
+  - Improved function signatures with specific return types
+  - Better IDE support and static analysis capabilities
+  - More self-documenting code through explicit type contracts
+
+### Technical Debt
+- Remaining Phase 12 task: logging architecture improvements (12.5)
+- Phase 13 pending: performance and reliability enhancements
+
 ## [1.3.1] - 2025-08-15
 
 ### Features

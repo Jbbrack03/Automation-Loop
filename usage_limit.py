@@ -4,12 +4,13 @@ This module provides functions for parsing usage limit error messages
 and calculating wait times until usage can resume.
 """
 
+import datetime
 import json
 import re
 import time
-import datetime
+from typing import Any, Dict, Optional, Union, TypedDict
+
 import pytz
-from typing import Any, Dict, Optional
 
 from config import (
     MIN_WAIT_TIME,
@@ -20,7 +21,24 @@ from config import (
 )
 
 
-def _parse_json_error_format(error_message: str) -> Optional[Dict[str, str]]:
+class UsageLimitUnixResult(TypedDict):
+    """Type definition for usage limit error result with Unix timestamp format."""
+    reset_at: Union[int, float]
+    format: str
+
+
+class UsageLimitNaturalResult(TypedDict):
+    """Type definition for usage limit error result with natural language format."""
+    reset_time: str
+    timezone: str
+    format: str
+
+
+# Union type for all possible usage limit result formats
+UsageLimitResult = Union[UsageLimitUnixResult, UsageLimitNaturalResult]
+
+
+def _parse_json_error_format(error_message: str) -> Optional[UsageLimitUnixResult]:
     """Parse JSON format usage limit error message.
     
     Args:
@@ -43,7 +61,7 @@ def _parse_json_error_format(error_message: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def _parse_natural_language_format(error_message: str) -> Optional[Dict[str, str]]:
+def _parse_natural_language_format(error_message: str) -> Optional[UsageLimitNaturalResult]:
     """Parse natural language format usage limit error message.
     
     Args:
@@ -63,7 +81,7 @@ def _parse_natural_language_format(error_message: str) -> Optional[Dict[str, str
     return None
 
 
-def _create_usage_limit_result(reset_time: str = "", timezone: str = "", format_type: str = "natural_language") -> Dict[str, str]:
+def _create_usage_limit_result(reset_time: str = "", timezone: str = "", format_type: str = "natural_language") -> UsageLimitNaturalResult:
     """Create a standardized usage limit error result dictionary.
     
     This helper function ensures consistent structure across all parsing results,
@@ -89,7 +107,7 @@ def _create_usage_limit_result(reset_time: str = "", timezone: str = "", format_
     }
 
 
-def parse_usage_limit_error(error_message: str) -> Dict[str, str]:
+def parse_usage_limit_error(error_message: str) -> UsageLimitResult:
     """Parse usage limit error message to extract reset time information.
     
     This function parses usage limit error messages from Claude API in two formats:
@@ -144,13 +162,16 @@ def _validate_reset_info_structure(parsed_reset_info: Any) -> None:
         parsed_reset_info: The input to validate
         
     Raises:
-        ValueError: If parsed_reset_info is not a dictionary
+        ValueError: If parsed_reset_info is not a dictionary with required format
     """
     if not isinstance(parsed_reset_info, dict):
         raise ValueError("parsed_reset_info must be a dictionary")
+    
+    if "format" not in parsed_reset_info:
+        raise ValueError("parsed_reset_info must contain 'format' key")
 
 
-def _calculate_unix_timestamp_wait(parsed_reset_info: Dict[str, Any]) -> int:
+def _calculate_unix_timestamp_wait(parsed_reset_info: UsageLimitUnixResult) -> int:
     """Calculate wait time for Unix timestamp format.
     
     Args:
@@ -221,7 +242,7 @@ def _parse_time_string_to_24hour(reset_time_str: str) -> int:
         raise ValueError(f"Invalid time format '{reset_time_str}': {e}")
 
 
-def _calculate_natural_language_wait(parsed_reset_info: Dict[str, Any]) -> int:
+def _calculate_natural_language_wait(parsed_reset_info: UsageLimitNaturalResult) -> int:
     """Calculate wait time for natural language format.
     
     Args:
@@ -266,7 +287,7 @@ def _calculate_natural_language_wait(parsed_reset_info: Dict[str, Any]) -> int:
     return max(wait_seconds, MIN_WAIT_TIME)
 
 
-def calculate_wait_time(parsed_reset_info: Dict[str, Any]) -> int:
+def calculate_wait_time(parsed_reset_info: UsageLimitResult) -> int:
     """Calculate seconds to wait until reset time for Unix timestamp or natural language format.
     
     This function handles the timing calculation for Claude usage limit resets,
@@ -303,3 +324,31 @@ def calculate_wait_time(parsed_reset_info: Dict[str, Any]) -> int:
         return _calculate_natural_language_wait(parsed_reset_info)
     else:
         raise ValueError(f"Unsupported format type: {format_type}. Supported formats: 'unix_timestamp', 'natural_language'")
+
+
+def parse_timestamp_to_datetime(timestamp: Union[int, float], 
+                               timezone: Optional[str] = None) -> Optional[datetime.datetime]:
+    """Parse a Unix timestamp to a datetime object with optional timezone.
+    
+    Args:
+        timestamp: Unix timestamp as int or float
+        timezone: Optional timezone string (e.g., "America/Chicago")
+        
+    Returns:
+        datetime object or None if conversion fails
+    """
+    try:
+        # Convert timestamp to datetime in UTC
+        dt = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
+        
+        # Convert to specified timezone if provided
+        if timezone:
+            try:
+                tz = pytz.timezone(timezone)
+                dt = dt.astimezone(tz)
+            except pytz.exceptions.UnknownTimeZoneError:
+                return None
+                
+        return dt
+    except (ValueError, OSError, OverflowError):
+        return None
