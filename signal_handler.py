@@ -13,7 +13,7 @@ from config import SIGNAL_WAIT_TIMEOUT, SIGNAL_WAIT_SLEEP_INTERVAL, LOGGERS
 
 def _get_logger():
     """Get the command executor logger for this module."""
-    return LOGGERS['command_executor']
+    return LOGGERS.get('command_executor')
 
 
 def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIGNAL_WAIT_TIMEOUT, 
@@ -40,22 +40,26 @@ def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIG
     """
     logger = _get_logger()
     
-    logger.debug(f"Waiting for signal file: {signal_file_path} (timeout: {timeout}s)")
+    if logger:
+        logger.debug(f"Waiting for signal file: {signal_file_path} (timeout: {timeout}s)")
     
     start_time = time.time()
     elapsed_time = 0.0
     
     while elapsed_time < timeout:
         if os.path.exists(signal_file_path):
-            logger.debug(f"Signal file appeared after {elapsed_time:.1f}s")
+            if logger:
+                logger.debug(f"Signal file appeared after {elapsed_time:.1f}s")
             
             try:
                 os.remove(signal_file_path)
-                logger.debug("Signal file cleaned up successfully")
+                if logger:
+                    logger.debug("Signal file cleaned up successfully")
                 return
             except OSError as e:
                 # Log the error but don't fail - the command may have completed successfully
-                logger.warning(f"Failed to remove signal file: {e}")
+                if logger:
+                    logger.warning(f"Failed to remove signal file: {e}")
                 return
         
         time.sleep(sleep_interval)
@@ -63,7 +67,8 @@ def wait_for_signal_file(signal_file_path: str, timeout: Union[int, float] = SIG
     
     # Timeout reached - this indicates a potential issue with Claude CLI execution
     error_msg = f"Signal file {signal_file_path} did not appear within {timeout}s timeout"
-    logger.error(error_msg)
+    if logger:
+        logger.error(error_msg)
     raise TimeoutError(error_msg)
 
 
@@ -85,7 +90,9 @@ def cleanup_signal_file(signal_file_path: str) -> None:
     try:
         if os.path.exists(signal_file_path):
             os.remove(signal_file_path)
-            logger.debug(f"Successfully cleaned up signal file: {signal_file_path}")
+            if logger:
+                logger.debug(f"Successfully cleaned up signal file: {signal_file_path}")
     except (OSError, FileNotFoundError, PermissionError) as e:
         # Continue if file deletion fails - don't break the workflow
-        logger.warning(f"Failed to clean up signal file {signal_file_path}: {e}")
+        if logger:
+            logger.warning(f"Failed to clean up signal file {signal_file_path}: {e}")

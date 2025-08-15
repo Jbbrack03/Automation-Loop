@@ -56,6 +56,7 @@ class TestErrorHandlingConsistency:
             with patch('command_executor.LOGGERS') as mock_loggers:
                 mock_error_logger = MagicMock()
                 mock_loggers.__getitem__.return_value = mock_error_logger
+                mock_loggers.get.return_value = mock_error_logger
                 
                 test_command = "/continue"
                 
@@ -99,6 +100,7 @@ class TestErrorHandlingConsistency:
                     with patch('command_executor.LOGGERS') as mock_loggers:
                         mock_error_logger = MagicMock()
                         mock_loggers.__getitem__.return_value = mock_error_logger
+                        mock_loggers.get.return_value = mock_error_logger
                         
                         test_command = "/validate"
                         
@@ -141,36 +143,38 @@ class TestErrorHandlingConsistency:
                     
                     # Mock the logger to capture error logs
                     with patch('command_executor.LOGGERS') as mock_loggers:
-                        mock_error_logger = MagicMock()
-                        mock_loggers.__getitem__.return_value = mock_error_logger
-                        
-                        test_command = "/update"
-                        
-                        # Expect CommandTimeoutError (specific type, not TimeoutError)  
-                        with pytest.raises(Exception) as exc_info:
-                            run_claude_command(test_command)
-                        
-                        # Verify specific exception type (will fail - currently raises TimeoutError)
-                        assert exc_info.type.__name__ == "CommandTimeoutError", (
-                            f"Expected CommandTimeoutError, got {exc_info.type.__name__}. "
-                            "run_claude_command should raise specific exception types for timeout failures."
-                        )
-                        
-                        # Verify consistent error message format  
-                        expected_format = f"[COMMAND_TIMEOUT]: Claude command timed out waiting for completion signal - Command: {test_command}"
-                        assert expected_format in str(exc_info.value), (
-                            f"Timeout error message format is inconsistent. Expected format like '{expected_format}', "
-                            f"got: {str(exc_info.value)}"
-                        )
-                        
-                        # Verify error was logged with error_handler logger
-                        mock_error_logger.error.assert_called()
-                        logged_messages = [call[0][0] for call in mock_error_logger.error.call_args_list]
-                        timeout_error_logged = any("[COMMAND_TIMEOUT]" in msg for msg in logged_messages)
-                        assert timeout_error_logged, (
-                            f"Timeout error should be logged with consistent format using error_handler logger. "
-                            f"Got log messages: {logged_messages}"
-                        )
+                        with patch('signal_handler.LOGGERS', mock_loggers):
+                            mock_error_logger = MagicMock()
+                            mock_loggers.__getitem__.return_value = mock_error_logger
+                            mock_loggers.get.return_value = mock_error_logger
+                            
+                            test_command = "/update"
+                            
+                            # Expect CommandTimeoutError (specific type, not TimeoutError)  
+                            with pytest.raises(Exception) as exc_info:
+                                run_claude_command(test_command)
+                            
+                            # Verify specific exception type (will fail - currently raises TimeoutError)
+                            assert exc_info.type.__name__ == "CommandTimeoutError", (
+                                f"Expected CommandTimeoutError, got {exc_info.type.__name__}. "
+                                "run_claude_command should raise specific exception types for timeout failures."
+                            )
+                            
+                            # Verify consistent error message format  
+                            expected_format = f"[COMMAND_TIMEOUT]: Claude command timed out waiting for completion signal - Command: {test_command}"
+                            assert expected_format in str(exc_info.value), (
+                                f"Timeout error message format is inconsistent. Expected format like '{expected_format}', "
+                                f"got: {str(exc_info.value)}"
+                            )
+                            
+                            # Verify error was logged with error_handler logger
+                            mock_error_logger.error.assert_called()
+                            logged_messages = [call[0][0] for call in mock_error_logger.error.call_args_list]
+                            timeout_error_logged = any("[COMMAND_TIMEOUT]" in msg for msg in logged_messages)
+                            assert timeout_error_logged, (
+                                f"Timeout error should be logged with consistent format using error_handler logger. "
+                                f"Got log messages: {logged_messages}"
+                            )
     
     def test_error_handling_uses_specific_exception_hierarchy(self):
         """
@@ -258,10 +262,12 @@ class TestErrorHandlingConsistency:
                 # Set up mock loggers
                 mock_error_logger = MagicMock()
                 mock_command_logger = MagicMock()
-                mock_loggers.__getitem__.side_effect = lambda key: {
+                logger_dict = {
                     'error_handler': mock_error_logger,
                     'command_executor': mock_command_logger
-                }.get(key, MagicMock())
+                }
+                mock_loggers.__getitem__.side_effect = lambda key: logger_dict.get(key, MagicMock())
+                mock_loggers.get.side_effect = lambda key, default=None: logger_dict.get(key, default)
                 
                 test_command = "/test"
                 

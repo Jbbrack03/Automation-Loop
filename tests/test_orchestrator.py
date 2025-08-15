@@ -1762,6 +1762,126 @@ class TestUsageLimitParsing:
         assert evening_result <= 24 * 3600, f"Wait time should not exceed 24 hours, got: {evening_result} seconds"
 
 
+class TestDependencyInjection:
+    """Test suite for dependency injection in the orchestrator."""
+    
+    def test_main_function_accepts_dependency_injection_and_factory_function_exists(self):
+        """
+        Test that main() function accepts dependency injection and a factory function exists.
+        
+        This test verifies Task 12.3: Implement proper dependency injection by testing that:
+        1. main() function accepts optional dependency injection parameters
+        2. A create_dependencies() factory function exists to create complex objects
+        3. Dependencies can be injected and used instead of creating internally
+        4. When no dependencies are injected, defaults are created via factory
+        
+        The test focuses on the main components that need dependency injection:
+        - TaskTracker instance (for task state management)
+        - Command execution function (run_claude_command)
+        - Logger setup function (setup_logging)
+        - Status retrieval function (get_latest_status)
+        
+        This enables better testability by allowing mocks to be injected rather than
+        relying on global imports and direct instantiation.
+        
+        Current architecture issues this addresses:
+        - main() creates TaskTracker() directly instead of accepting injection
+        - Functions import run_claude_command directly instead of receiving it
+        - setup_logging() configures global state instead of being injectable
+        - Hard to test main() function due to tight coupling with dependencies
+        
+        This test will initially fail because dependency injection hasn't been implemented yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Import the functions to test
+        from automate_dev import main, create_dependencies
+        
+        # Test that create_dependencies factory function exists and returns expected structure
+        dependencies = create_dependencies()
+        
+        # Verify factory returns a dictionary with expected dependency keys
+        assert isinstance(dependencies, dict), "create_dependencies should return a dictionary"
+        
+        expected_keys = [
+            'task_tracker',      # TaskTracker instance
+            'command_executor',  # Function for executing Claude commands
+            'logger_setup',      # Function for setting up logging
+            'status_getter'      # Function for getting latest status
+        ]
+        
+        for key in expected_keys:
+            assert key in dependencies, f"Dependencies should contain '{key}' key"
+        
+        # Verify dependency types are correct
+        from task_tracker import TaskTracker
+        assert isinstance(dependencies['task_tracker'], TaskTracker), "task_tracker should be TaskTracker instance"
+        assert callable(dependencies['command_executor']), "command_executor should be callable"
+        assert callable(dependencies['logger_setup']), "logger_setup should be callable"
+        assert callable(dependencies['status_getter']), "status_getter should be callable"
+        
+        # Test that main() function accepts optional dependencies parameter
+        import inspect
+        main_signature = inspect.signature(main)
+        
+        # Verify main() has dependencies parameter (optional with default None)
+        param_names = list(main_signature.parameters.keys())
+        assert 'dependencies' in param_names, "main() should accept 'dependencies' parameter"
+        
+        dependencies_param = main_signature.parameters['dependencies']
+        assert dependencies_param.default is None, "dependencies parameter should default to None"
+        
+        # Test that main() can be called with injected dependencies (mock scenario)
+        from unittest.mock import MagicMock, patch
+        
+        # Create mock dependencies
+        mock_dependencies = {
+            'task_tracker': MagicMock(),
+            'command_executor': MagicMock(),
+            'logger_setup': MagicMock(),
+            'status_getter': MagicMock()
+        }
+        
+        # Configure mocks for quick test execution
+        # Mock task_tracker to return no tasks (all complete)
+        mock_dependencies['task_tracker'].get_next_task.return_value = (None, True)
+        
+        # Mock status_getter to return validation_passed then project_complete  
+        mock_dependencies['status_getter'].side_effect = [
+            "validation_passed",   # After /validate
+            "project_complete",    # After /update - triggers refactoring
+            "project_complete",    # Check in handle_project_completion
+            "checkin_complete",    # After /checkin
+            "no_refactoring_needed"  # After /refactor - exit
+        ]
+        
+        # Mock command_executor to return success
+        mock_dependencies['command_executor'].return_value = {"status": "success"}
+        
+        # Mock sys.exit to prevent actual exit
+        with patch('sys.exit') as mock_exit:
+            # Call main() with injected dependencies
+            main(dependencies=mock_dependencies)
+            
+            # Verify sys.exit was called with success code (indicating successful run with injected dependencies)
+            mock_exit.assert_called_once_with(0)
+        
+        # Verify that injected dependencies were used
+        mock_dependencies['logger_setup'].assert_called_once()
+        mock_dependencies['task_tracker'].get_next_task.assert_called()
+        
+        # Test that main() works without dependencies (uses factory defaults)
+        with patch('sys.exit') as mock_exit:
+            with patch('automate_dev.create_dependencies') as mock_factory:
+                # Configure factory to return working defaults
+                mock_factory.return_value = dependencies
+                
+                # Call main() without dependencies - should use factory
+                main()
+                
+                # Verify factory was called to create defaults
+                mock_factory.assert_called_once()
+
+
 class TestFixtureOptimization:
     """Test suite for validating optimized test structure with reusable fixtures."""
     

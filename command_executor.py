@@ -81,31 +81,37 @@ def _handle_usage_limit_and_retry(command: str, command_array: List[str],
         4. Wait for signal file from first attempt
         5. Retry the command execution
     """
-    logger = LOGGERS['usage_limit']
+    logger = LOGGERS.get('usage_limit')
     
-    logger.warning(f"Usage limit detected for command '{command}', initiating retry workflow")
+    if logger:
+        logger.warning(f"Usage limit detected for command '{command}', initiating retry workflow")
     
     # Parse usage limit error
     output_to_check = result.stdout + " " + result.stderr
     parsed_info = parse_usage_limit_error(output_to_check)
-    logger.debug(f"Parsed usage limit info: {parsed_info}")
+    if logger:
+        logger.debug(f"Parsed usage limit info: {parsed_info}")
     
     # Calculate wait time
     wait_seconds = calculate_wait_time(parsed_info)
-    logger.info(f"Calculated wait time: {wait_seconds} seconds")
+    if logger:
+        logger.info(f"Calculated wait time: {wait_seconds} seconds")
     
     # Wait for reset time - also print for user visibility during long waits
     message = f"Usage limit reached. Waiting {wait_seconds} seconds for reset..."
-    logger.info(message)
+    if logger:
+        logger.info(message)
     print(message)  # Keep user-facing message for visibility
     time.sleep(wait_seconds)
     
     # Wait for signal file from first attempt
-    logger.debug("Waiting for signal file from initial command attempt")
+    if logger:
+        logger.debug("Waiting for signal file from initial command attempt")
     _wait_for_completion_with_context(command, debug=debug)
     
     # Retry the command
-    logger.info(f"Retrying command '{command}' after usage limit wait")
+    if logger:
+        logger.info(f"Retrying command '{command}' after usage limit wait")
     return _execute_claude_subprocess(command_array, command, debug=debug)
 
 
@@ -119,13 +125,14 @@ def _wait_for_completion_with_context(command: str, debug: bool = False) -> None
     Raises:
         CommandTimeoutError: If signal file doesn't appear with command context
     """
-    error_logger = LOGGERS['error_handler']
+    error_logger = LOGGERS.get('error_handler')
     
     try:
         wait_for_signal_file(SIGNAL_FILE, debug=debug)
     except TimeoutError as e:
         error_msg = f"Claude command timed out waiting for completion signal"
-        error_logger.error(f"[COMMAND_TIMEOUT]: {error_msg} - Command: {command}")
+        if error_logger:
+            error_logger.error(f"[COMMAND_TIMEOUT]: {error_msg} - Command: {command}")
         raise CommandTimeoutError(error_msg, command) from e
 
 
@@ -143,11 +150,12 @@ def _execute_claude_subprocess(command_array: List[str], command: str, debug: bo
     Raises:
         CommandExecutionError: If subprocess execution fails
     """
-    logger = LOGGERS['command_executor']
-    error_logger = LOGGERS['error_handler']
+    logger = LOGGERS.get('command_executor')
+    error_logger = LOGGERS.get('error_handler')
     
     cmd_str = ' '.join(command_array)
-    logger.debug(f"Executing subprocess: {cmd_str}")
+    if logger:
+        logger.debug(f"Executing subprocess: {cmd_str}")
     
     try:
         result = subprocess.run(
@@ -157,17 +165,21 @@ def _execute_claude_subprocess(command_array: List[str], command: str, debug: bo
             check=False  # Don't raise on non-zero exit codes
         )
         
-        logger.debug(f"Subprocess completed with return code: {result.returncode}")
+        if logger:
+            logger.debug(f"Subprocess completed with return code: {result.returncode}")
         if result.stderr:
-            logger.debug(f"Subprocess stderr: {result.stderr}")
+            if logger:
+                logger.debug(f"Subprocess stderr: {result.stderr}")
         if result.stdout:
-            logger.debug(f"Subprocess stdout length: {len(result.stdout)} characters")
+            if logger:
+                logger.debug(f"Subprocess stdout length: {len(result.stdout)} characters")
         
         return result
         
     except subprocess.SubprocessError as e:
         error_msg = f"Failed to execute Claude CLI command"
-        error_logger.error(f"[COMMAND_EXECUTION]: {error_msg} - Command: {command}")
+        if error_logger:
+            error_logger.error(f"[COMMAND_EXECUTION]: {error_msg} - Command: {command}")
         raise CommandExecutionError(error_msg, command) from e
 
 
@@ -197,11 +209,13 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
         which creates a signal file when Claude CLI commands complete. The signal file
         waiting mechanism provides reliable completion detection for automation workflows.
     """
-    logger = LOGGERS['command_executor']
+    logger = LOGGERS.get('command_executor')
     
-    logger.info(f"Executing Claude command: {command}")
+    if logger:
+        logger.info(f"Executing Claude command: {command}")
     if args:
-        logger.debug(f"Additional arguments: {args}")
+        if logger:
+            logger.debug(f"Additional arguments: {args}")
     
     # Construct the base command array with required flags
     command_array = [
@@ -215,7 +229,8 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
     if args:
         command_array.extend(args)
     
-    logger.debug(f"Full command array: {command_array}")
+    if logger:
+        logger.debug(f"Full command array: {command_array}")
     
     # Execute the Claude CLI command
     result = _execute_claude_subprocess(command_array, command, debug=debug)
@@ -223,24 +238,29 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
     # Check for usage limit errors in stdout or stderr and handle retry if needed
     output_to_check = result.stdout + " " + result.stderr
     if "usage limit" in output_to_check.lower():
-        logger.warning("Usage limit detected, initiating retry workflow")
+        if logger:
+            logger.warning("Usage limit detected, initiating retry workflow")
         result = _handle_usage_limit_and_retry(command, command_array, result, debug=debug)
     
     # Wait for signal file to appear (indicates command completion)
-    logger.debug("Waiting for command completion signal")
+    if logger:
+        logger.debug("Waiting for command completion signal")
     _wait_for_completion_with_context(command, debug=debug)
     
     # Parse JSON output from stdout
     try:
-        logger.debug(f"Parsing JSON output ({len(result.stdout)} characters)")
+        if logger:
+            logger.debug(f"Parsing JSON output ({len(result.stdout)} characters)")
         
         parsed_result = json.loads(result.stdout)
-        logger.info(f"Successfully executed Claude command '{command}'")
+        if logger:
+            logger.info(f"Successfully executed Claude command '{command}'")
         return parsed_result
     except json.JSONDecodeError as e:
-        error_logger = LOGGERS['error_handler']
+        error_logger = LOGGERS.get('error_handler')
         error_msg = f"Failed to parse Claude CLI JSON output"
-        error_logger.error(f"[JSON_PARSE]: {error_msg} - Command: {command}")
+        if error_logger:
+            error_logger.error(f"[JSON_PARSE]: {error_msg} - Command: {command}")
         raise JSONParseError(error_msg, command) from e
 
 
@@ -262,7 +282,7 @@ def execute_command_and_get_status(command: str, debug: bool = False) -> Optiona
         that appears frequently in the main orchestration loop. Uses delayed import
         to avoid circular dependencies with automate_dev module.
     """
-    logger = LOGGERS['error_handler']
+    logger = LOGGERS.get('error_handler')
     
     try:
         run_claude_command(command, debug=debug)
@@ -271,8 +291,10 @@ def execute_command_and_get_status(command: str, debug: bool = False) -> Optiona
         import importlib
         automate_dev_module = importlib.import_module('automate_dev')
         status = automate_dev_module.get_latest_status(debug=debug)
-        logger.debug(f"Command {command} executed successfully, status: {status}")
+        if logger:
+            logger.debug(f"Command {command} executed successfully, status: {status}")
         return status
     except Exception as e:
-        logger.error(f"Error executing command {command}: {e}")
+        if logger:
+            logger.error(f"Error executing command {command}: {e}")
         return None

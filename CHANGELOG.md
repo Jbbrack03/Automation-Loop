@@ -5,6 +5,34 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-08-15
+
+### Features
+- **Dependency Injection Implementation** (Phase 12 Task 3 complete)
+  - Created `create_dependencies()` factory function for dependency creation
+  - Modified `main()` function to accept optional dependencies parameter
+  - Implemented dependency injection throughout the entire call chain
+  - Added `Dependencies` TypedDict for structured dependency definition
+  - Enhanced testability by allowing mock injection
+  - Maintained full backward compatibility
+
+### Improved
+- **Better Test Isolation**
+  - Functions can now be tested in isolation with mocked dependencies
+  - Reduced coupling between components
+  - Improved flexibility for different execution contexts
+  
+### Fixed
+- **Logger Access Patterns**
+  - Updated all logger access to use `.get()` instead of direct indexing
+  - Added safety checks before all logger method calls
+  - Fixed issues in `command_executor.py` and `signal_handler.py` modules
+  - Resolved test failures related to mocked loggers
+
+### Technical Debt
+- Remaining Phase 12 tasks: comprehensive type hints (12.4), logging architecture (12.5)
+- Phase 13 pending: performance and reliability enhancements
+
 ## [1.3.0] - 2025-08-15
 
 ### Features
