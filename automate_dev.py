@@ -30,6 +30,134 @@ from config import (
 )
 
 
+# Exception hierarchy for consistent error handling
+def _format_error_message(error_type: str, message: str, command: str = "") -> str:
+    """Format error message with consistent pattern across all exception types.
+    
+    Creates standardized error messages in the format:
+    "[ERROR_TYPE]: {message} - Command: {command}" when command is provided
+    "[ERROR_TYPE]: {message}" when no command is provided
+    
+    Args:
+        error_type: The type of error (e.g., "COMMAND_EXECUTION", "JSON_PARSE")
+        message: The detailed error message
+        command: Optional command context for debugging
+        
+    Returns:
+        Formatted error message string with consistent structure
+        
+    Example:
+        >>> _format_error_message("COMMAND_EXECUTION", "Failed to run command", "/continue")
+        "[COMMAND_EXECUTION]: Failed to run command - Command: /continue"
+        >>> _format_error_message("JSON_PARSE", "Invalid JSON response")
+        "[JSON_PARSE]: Invalid JSON response"
+    """
+    if command:
+        return f"[{error_type}]: {message} - Command: {command}"
+    else:
+        return f"[{error_type}]: {message}"
+
+
+class OrchestratorError(Exception):
+    """Base exception for orchestrator-related errors.
+    
+    This serves as the root exception for all orchestrator-specific errors,
+    enabling consistent exception handling throughout the automation workflow.
+    All specific error types inherit from this base class for hierarchical
+    exception management.
+    """
+    pass
+
+
+class CommandExecutionError(OrchestratorError):
+    """Exception raised when Claude CLI command execution fails.
+    
+    This exception is raised when subprocess execution fails during Claude CLI
+    command execution, typically due to:
+    - Missing claude CLI binary
+    - Invalid command syntax
+    - System-level execution failures
+    - Permission issues
+    
+    Args:
+        message: Detailed error description
+        command: The Claude command that failed (for debugging context)
+        
+    Example:
+        >>> raise CommandExecutionError("Failed to execute Claude CLI command", "/continue")
+        CommandExecutionError: [COMMAND_EXECUTION]: Failed to execute Claude CLI command - Command: /continue
+    """
+    def __init__(self, message: str, command: str = ""):
+        super().__init__(_format_error_message("COMMAND_EXECUTION", message, command))
+
+
+class JSONParseError(OrchestratorError):
+    """Exception raised when JSON parsing fails.
+    
+    This exception is raised when Claude CLI output cannot be parsed as valid JSON,
+    typically due to:
+    - Malformed JSON syntax in Claude CLI response
+    - Partial or truncated output
+    - Non-JSON error messages mixed with expected JSON output
+    - Empty or null response from Claude CLI
+    
+    Args:
+        message: Detailed error description
+        command: The Claude command that produced unparseable output
+        
+    Example:
+        >>> raise JSONParseError("Failed to parse Claude CLI JSON output", "/validate")
+        JSONParseError: [JSON_PARSE]: Failed to parse Claude CLI JSON output - Command: /validate
+    """
+    def __init__(self, message: str, command: str = ""):
+        super().__init__(_format_error_message("JSON_PARSE", message, command))
+
+
+class CommandTimeoutError(OrchestratorError):
+    """Exception raised when commands timeout waiting for completion signal.
+    
+    This exception is raised when Claude CLI commands execute successfully but
+    the automation workflow times out waiting for the completion signal file,
+    typically due to:
+    - Missing or misconfigured Stop hook in .claude/settings.local.json
+    - File system permission issues preventing signal file creation
+    - Network or I/O delays causing signal file creation delays
+    - Claude CLI hanging or taking longer than expected timeout
+    
+    Args:
+        message: Detailed timeout error description
+        command: The Claude command that timed out waiting for signal
+        
+    Example:
+        >>> raise CommandTimeoutError("Claude command timed out waiting for completion signal", "/continue")
+        CommandTimeoutError: [COMMAND_TIMEOUT]: Claude command timed out waiting for completion signal - Command: /continue
+    """
+    def __init__(self, message: str, command: str = ""):
+        super().__init__(_format_error_message("COMMAND_TIMEOUT", message, command))
+
+
+class ValidationError(OrchestratorError):
+    """Exception raised when validation fails.
+    
+    This exception is raised when validation processes detect failures that
+    prevent the workflow from continuing, typically due to:
+    - Test failures during validation phase
+    - Code quality issues (linting, type checking failures)
+    - Critical file validation failures
+    - Business logic validation rule violations
+    
+    Args:
+        message: Detailed validation failure description
+        command: The Claude command that triggered validation failure
+        
+    Example:
+        >>> raise ValidationError("Tests failed during validation", "/validate")
+        ValidationError: [VALIDATION]: Tests failed during validation - Command: /validate
+    """
+    def __init__(self, message: str, command: str = ""):
+        super().__init__(_format_error_message("VALIDATION", message, command))
+
+
 def setup_logging() -> None:
     """Set up comprehensive logging with module-specific loggers.
     
@@ -371,7 +499,7 @@ def _handle_usage_limit_and_retry(command: str, command_array: List[str],
     
     # Retry the command
     logger.info(f"Retrying command '{command}' after usage limit wait")
-    return _execute_claude_subprocess(command_array, debug=debug)
+    return _execute_claude_subprocess(command_array, command, debug=debug)
 
 
 def _wait_for_completion_with_context(command: str, debug: bool = False) -> None:
@@ -382,29 +510,34 @@ def _wait_for_completion_with_context(command: str, debug: bool = False) -> None
         debug: Whether to enable debug logging
         
     Raises:
-        TimeoutError: If signal file doesn't appear with command context
+        CommandTimeoutError: If signal file doesn't appear with command context
     """
+    error_logger = LOGGERS['error_handler']
+    
     try:
         _wait_for_signal_file(SIGNAL_FILE, debug=debug)
     except TimeoutError as e:
-        # Re-raise with additional context about the command that timed out
-        raise TimeoutError(f"Claude command '{command}' timed out: {e}") from e
+        error_msg = f"Claude command timed out waiting for completion signal"
+        error_logger.error(f"[COMMAND_TIMEOUT]: {error_msg} - Command: {command}")
+        raise CommandTimeoutError(error_msg, command) from e
 
 
-def _execute_claude_subprocess(command_array: List[str], debug: bool = False) -> subprocess.CompletedProcess:
+def _execute_claude_subprocess(command_array: List[str], command: str, debug: bool = False) -> subprocess.CompletedProcess:
     """Execute Claude CLI subprocess and return the completed process.
     
     Args:
         command_array: The complete command array to execute
+        command: The original Claude command for error context
         debug: Whether to enable debug logging
         
     Returns:
         subprocess.CompletedProcess object with stdout, stderr, and returncode
         
     Raises:
-        subprocess.SubprocessError: If subprocess execution fails
+        CommandExecutionError: If subprocess execution fails
     """
     logger = LOGGERS['command_executor']
+    error_logger = LOGGERS['error_handler']
     
     cmd_str = ' '.join(command_array)
     logger.debug(f"Executing subprocess: {cmd_str}")
@@ -426,9 +559,9 @@ def _execute_claude_subprocess(command_array: List[str], debug: bool = False) ->
         return result
         
     except subprocess.SubprocessError as e:
-        error_msg = f"Failed to execute Claude CLI command: {e}"
-        logger.error(error_msg)
-        raise subprocess.SubprocessError(error_msg) from e
+        error_msg = f"Failed to execute Claude CLI command"
+        error_logger.error(f"[COMMAND_EXECUTION]: {error_msg} - Command: {command}")
+        raise CommandExecutionError(error_msg, command) from e
 
 
 def run_claude_command(command: str, args: Optional[List[str]] = None, 
@@ -448,9 +581,9 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
         Parsed JSON response from Claude CLI as a dictionary
         
     Raises:
-        subprocess.SubprocessError: If Claude CLI execution fails
-        json.JSONDecodeError: If Claude CLI output is not valid JSON
-        TimeoutError: If signal file doesn't appear within timeout period
+        CommandExecutionError: If Claude CLI execution fails
+        JSONParseError: If Claude CLI output is not valid JSON
+        CommandTimeoutError: If signal file doesn't appear within timeout period
         
     Note:
         This function relies on the Stop hook configuration in .claude/settings.local.json
@@ -478,7 +611,7 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
     logger.debug(f"Full command array: {command_array}")
     
     # Execute the Claude CLI command
-    result = _execute_claude_subprocess(command_array, debug=debug)
+    result = _execute_claude_subprocess(command_array, command, debug=debug)
     
     # Check for usage limit errors in stdout or stderr and handle retry if needed
     output_to_check = result.stdout + " " + result.stderr
@@ -498,13 +631,10 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
         logger.info(f"Successfully executed Claude command '{command}'")
         return parsed_result
     except json.JSONDecodeError as e:
-        error_msg = f"Failed to parse Claude CLI JSON output for command '{command}': {e.msg}"
-        logger.error(f"{error_msg}. Raw output: {result.stdout[:500]}...")
-        raise json.JSONDecodeError(
-            error_msg,
-            result.stdout,
-            e.pos
-        ) from e
+        error_logger = LOGGERS['error_handler']
+        error_msg = f"Failed to parse Claude CLI JSON output"
+        error_logger.error(f"[JSON_PARSE]: {error_msg} - Command: {command}")
+        raise JSONParseError(error_msg, command) from e
 
 
 def _cleanup_status_files(status_files: List[Path], debug: bool = False) -> None:

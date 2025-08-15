@@ -11,6 +11,14 @@ import os
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
+from test_fixtures import (
+    mock_claude_command_fixture,
+    mock_get_latest_status_fixture,
+    create_mock_implementation_plan,
+    create_main_loop_command_mock,
+    get_main_loop_status_sequence,
+    get_refactoring_loop_status_sequence
+)
 
 class TestOrchestratorScriptExecution:
     """Test suite for basic orchestrator script functionality."""
@@ -100,9 +108,7 @@ class TestOrchestratorPrerequisiteFileChecks:
                 )
                 assert error_message_found, f"Expected error message about missing Implementation Plan.md, got: {printed_messages}"
     
-    @patch('automate_dev.get_latest_status')
-    @patch('automate_dev.run_claude_command')
-    def test_orchestrator_prints_warning_when_prd_md_missing(self, mock_run_claude_command, mock_get_latest_status, tmp_path, monkeypatch):
+    def test_orchestrator_prints_warning_when_prd_md_missing(self, mock_claude_command, mock_get_latest_status, test_environment):
         """
         Test that the orchestrator prints a warning if PRD.md is missing.
         
@@ -112,26 +118,11 @@ class TestOrchestratorPrerequisiteFileChecks:
         This test will initially fail because main() doesn't implement these checks yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory
-        monkeypatch.chdir(tmp_path)
-        
-        # Create .claude directory to avoid ensure_settings_file issues
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        
-        # Create Implementation Plan.md to avoid the exit condition
-        implementation_plan = tmp_path / "Implementation Plan.md"
-        implementation_plan.write_text("# Implementation Plan\n\n- [X] Task 1", encoding="utf-8")
+        env = test_environment
         
         # Ensure PRD.md does NOT exist
-        prd_file = tmp_path / "PRD.md"
-        if prd_file.exists():
-            prd_file.unlink()
-        
-        # Mock command execution to prevent actual Claude CLI calls
-        mock_run_claude_command.return_value = {"status": "success"}
-        # Mock get_latest_status to simulate all tasks complete
-        mock_get_latest_status.return_value = "project_complete"
+        if env["prd_file"].exists():
+            env["prd_file"].unlink()
         
         # Import main function to test
         from automate_dev import main
@@ -152,9 +143,7 @@ class TestOrchestratorPrerequisiteFileChecks:
                 )
                 assert warning_message_found, f"Expected warning message about missing PRD.md, got: {printed_messages}"
     
-    @patch('automate_dev.get_latest_status')
-    @patch('automate_dev.run_claude_command')
-    def test_orchestrator_prints_warning_when_claude_md_missing(self, mock_run_claude_command, mock_get_latest_status, tmp_path, monkeypatch):
+    def test_orchestrator_prints_warning_when_claude_md_missing(self, mock_claude_command, mock_get_latest_status, test_environment):
         """
         Test that the orchestrator prints a warning if CLAUDE.md is missing.
         
@@ -164,26 +153,11 @@ class TestOrchestratorPrerequisiteFileChecks:
         This test will initially fail because main() doesn't implement these checks yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory
-        monkeypatch.chdir(tmp_path)
-        
-        # Create .claude directory to avoid ensure_settings_file issues
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        
-        # Create Implementation Plan.md to avoid the exit condition
-        implementation_plan = tmp_path / "Implementation Plan.md"
-        implementation_plan.write_text("# Implementation Plan\n\n- [X] Task 1", encoding="utf-8")
+        env = test_environment
         
         # Ensure CLAUDE.md does NOT exist
-        claude_file = tmp_path / "CLAUDE.md"
-        if claude_file.exists():
-            claude_file.unlink()
-        
-        # Mock command execution to prevent actual Claude CLI calls
-        mock_run_claude_command.return_value = {"status": "success"}
-        # Mock get_latest_status to simulate all tasks complete
-        mock_get_latest_status.return_value = "project_complete"
+        if env["claude_file"].exists():
+            env["claude_file"].unlink()
         
         # Import main function to test
         from automate_dev import main
@@ -204,9 +178,7 @@ class TestOrchestratorPrerequisiteFileChecks:
                 )
                 assert warning_message_found, f"Expected warning message about missing CLAUDE.md, got: {printed_messages}"
     
-    @patch('automate_dev.get_latest_status')
-    @patch('automate_dev.run_claude_command')
-    def test_orchestrator_continues_when_all_prerequisite_files_present(self, mock_run_claude_command, mock_get_latest_status, tmp_path, monkeypatch):
+    def test_orchestrator_continues_when_all_prerequisite_files_present(self, mock_claude_command, mock_get_latest_status, prerequisite_files_setup):
         """
         Test that the orchestrator continues normally when all prerequisite files are present.
         
@@ -216,27 +188,7 @@ class TestOrchestratorPrerequisiteFileChecks:
         This test will initially fail because main() doesn't implement these checks yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory
-        monkeypatch.chdir(tmp_path)
-        
-        # Create .claude directory to avoid ensure_settings_file issues
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        
-        # Create all prerequisite files
-        implementation_plan = tmp_path / "Implementation Plan.md"
-        implementation_plan.write_text("# Implementation Plan\n\n- [X] Task 1", encoding="utf-8")
-        
-        prd_file = tmp_path / "PRD.md"
-        prd_file.write_text("# Product Requirements Document", encoding="utf-8")
-        
-        claude_file = tmp_path / "CLAUDE.md"
-        claude_file.write_text("# CLAUDE.md\n\nProject instructions for Claude Code.", encoding="utf-8")
-        
-        # Mock command execution to prevent actual Claude CLI calls
-        mock_run_claude_command.return_value = {"status": "success"}
-        # Mock get_latest_status to simulate all tasks complete
-        mock_get_latest_status.return_value = "project_complete"
+        env = prerequisite_files_setup
         
         # Import main function to test
         from automate_dev import main
@@ -1047,9 +999,7 @@ class TestHookConfiguration:
 class TestMainOrchestrationLoop:
     """Test suite for the main orchestration loop implementation."""
     
-    @patch('automate_dev.get_latest_status')
-    @patch('automate_dev.run_claude_command')
-    def test_main_loop_executes_tdd_sequence_happy_path(self, mock_run_claude_command, mock_get_latest_status, tmp_path, monkeypatch):
+    def test_main_loop_executes_tdd_sequence_happy_path(self, mock_claude_command, mock_get_latest_status, main_loop_test_setup):
         """
         Test that the main orchestration loop executes the correct TDD sequence in the happy path.
         
@@ -1067,82 +1017,13 @@ class TestMainOrchestrationLoop:
         This test will initially fail because the main loop logic hasn't been implemented yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory
-        monkeypatch.chdir(tmp_path)
+        env = main_loop_test_setup
         
-        # Create Implementation Plan.md with multiple tasks
-        implementation_plan = tmp_path / "Implementation Plan.md"
-        implementation_plan_content = """# Implementation Plan
-
-## Phase 1: Development
-- [ ] Implement user authentication
-- [ ] Create database schema
-- [X] Already completed task
-
-## Phase 2: Testing  
-- [ ] Write integration tests
-"""
-        implementation_plan.write_text(implementation_plan_content, encoding="utf-8")
+        # Configure the command mock to simulate task progression
+        mock_claude_command.side_effect = create_main_loop_command_mock(env["implementation_plan"])
         
-        # Create .claude directory to avoid file creation issues
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
-        
-        # Mock run_claude_command to return successful results
-        # AND simulate /update marking tasks as complete one by one
-        update_call_count = 0
-        def mock_run_command_happy_path(command, *args, **kwargs):
-            nonlocal update_call_count
-            # Simulate /update marking tasks as complete progressively
-            if command == "/update":
-                update_call_count += 1
-                if update_call_count == 1:
-                    # First /update: mark first task as complete
-                    updated_content = """# Implementation Plan
-
-## Phase 1: Setup
-- [X] Create project structure
-
-## Phase 2: Testing  
-- [ ] Write integration tests
-"""
-                    implementation_plan.write_text(updated_content, encoding="utf-8")
-                elif update_call_count == 2:
-                    # Second /update: mark second task as complete
-                    updated_content = """# Implementation Plan
-
-## Phase 1: Setup
-- [X] Create project structure
-
-## Phase 2: Testing  
-- [X] Write integration tests
-"""
-                    implementation_plan.write_text(updated_content, encoding="utf-8")
-                elif update_call_count == 3:
-                    # Third /update: all tasks already complete, no change needed
-                    pass
-            
-            return {"status": "success", "output": "Command completed"}
-        
-        mock_run_claude_command.side_effect = mock_run_command_happy_path
-        
-        # Mock get_latest_status to simulate the happy path flow:
-        # First task: validation_passed -> project_incomplete (continue to next task)
-        # Second task: validation_passed -> project_incomplete (continue to next task)  
-        # Third iteration (all complete): validation_passed -> project_complete
-        # Then enters refactoring loop but immediately exits (no refactoring needed)
-        mock_get_latest_status.side_effect = [
-            "validation_passed",     # After /validate for first task
-            "project_incomplete",    # After /update for first task
-            "validation_passed",     # After /validate for second task  
-            "project_incomplete",    # After /update for second task
-            "validation_passed",     # After /validate when all tasks complete
-            "project_complete",      # After /update - marks project complete
-            "project_complete",      # Check in handle_project_completion
-            # Refactoring loop starts but exits immediately
-            "checkin_complete",      # After /checkin
-            "no_refactoring_needed"  # After /refactor - exits
-        ]
+        # Configure status mock to simulate the happy path flow
+        mock_get_latest_status.side_effect = get_main_loop_status_sequence()
         
         # Import the main function to test
         from automate_dev import main
@@ -1180,8 +1061,8 @@ class TestMainOrchestrationLoop:
         ]
         
         # Verify run_claude_command was called with the expected sequence
-        assert mock_run_claude_command.call_count == 14, f"Expected 14 calls to run_claude_command, got {mock_run_claude_command.call_count}"
-        mock_run_claude_command.assert_has_calls(expected_calls, any_order=False)
+        assert mock_claude_command.call_count == 14, f"Expected 14 calls to run_claude_command, got {mock_claude_command.call_count}"
+        mock_claude_command.assert_has_calls(expected_calls, any_order=False)
         
         # Verify get_latest_status was called the correct number of times
         assert mock_get_latest_status.call_count == 9, f"Expected 9 calls to get_latest_status, got {mock_get_latest_status.call_count}"
@@ -1244,9 +1125,7 @@ class TestMainOrchestrationLoop:
 class TestRefactoringLoop:
     """Test suite for the refactoring and finalization loop functionality."""
     
-    @patch('automate_dev.get_latest_status')
-    @patch('automate_dev.run_claude_command')
-    def test_refactoring_loop_executes_complete_sequence(self, mock_run_claude_command, mock_get_latest_status, tmp_path, monkeypatch):
+    def test_refactoring_loop_executes_complete_sequence(self, mock_claude_command, mock_get_latest_status, refactoring_loop_test_setup):
         """
         Test that the refactoring loop executes the complete sequence when project_complete status is returned.
         
@@ -1266,54 +1145,13 @@ class TestRefactoringLoop:
         This test will initially fail because the refactoring loop logic hasn't been implemented yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory
-        monkeypatch.chdir(tmp_path)
-        
-        # Create Implementation Plan.md with all tasks complete
-        implementation_plan = tmp_path / "Implementation Plan.md"
-        implementation_plan_content = """# Implementation Plan
-
-## Phase 1: Development
-- [X] Implement user authentication
-- [X] Create database schema
-- [X] Write integration tests
-
-## Phase 2: Testing  
-- [X] All tests implemented
-"""
-        implementation_plan.write_text(implementation_plan_content, encoding="utf-8")
-        
-        # Create .claude directory to avoid file creation issues
-        claude_dir = tmp_path / ".claude"
-        claude_dir.mkdir()
+        env = refactoring_loop_test_setup
         
         # Mock run_claude_command to return successful results
-        mock_run_claude_command.return_value = {"status": "success", "output": "Command completed"}
+        mock_claude_command.return_value = {"status": "success", "output": "Command completed"}
         
-        # Mock get_latest_status to simulate the refactoring loop flow:
-        # Now properly handles the TDD cycle + refactoring flow
-        mock_get_latest_status.side_effect = [
-            # TDD cycle when all tasks complete
-            "validation_passed",         # From execute_tdd_cycle()
-            "project_complete",          # After /update in main loop
-            
-            # Check before entering refactoring (in handle_project_completion)
-            "project_complete",          # Confirms project_complete status
-            
-            # First refactoring cycle
-            "checkin_complete",          # After /checkin - proceed to /refactor
-            "refactoring_needed",        # After /refactor - proceed to /finalize
-            "finalization_complete",     # After /finalize - loop back to /checkin
-            
-            # Second refactoring cycle  
-            "checkin_complete",          # After /checkin - proceed to /refactor
-            "refactoring_needed",        # After /refactor - proceed to /finalize
-            "finalization_complete",     # After /finalize - loop back to /checkin
-            
-            # Third refactoring cycle (final)
-            "checkin_complete",          # After /checkin - proceed to /refactor
-            "no_refactoring_needed"      # After /refactor - exit refactoring loop
-        ]
+        # Configure status mock to simulate the complete refactoring workflow
+        mock_get_latest_status.side_effect = get_refactoring_loop_status_sequence()
         
         # Import the main function to test
         from automate_dev import main
@@ -1353,8 +1191,8 @@ class TestRefactoringLoop:
         ]
         
         # Verify run_claude_command was called with the expected refactoring sequence
-        assert mock_run_claude_command.call_count == 12, f"Expected 12 calls to run_claude_command (4 TDD + 8 refactoring), got {mock_run_claude_command.call_count}"
-        mock_run_claude_command.assert_has_calls(expected_calls, any_order=False)
+        assert mock_claude_command.call_count == 12, f"Expected 12 calls to run_claude_command (4 TDD + 8 refactoring), got {mock_claude_command.call_count}"
+        mock_claude_command.assert_has_calls(expected_calls, any_order=False)
         
         # Verify get_latest_status was called the correct number of times
         # 2 from main loop (validation, update) + 1 project check + 8 from refactoring (checkin/refactor/finalize x2 + checkin/refactor x1)
@@ -1917,6 +1755,91 @@ class TestUsageLimitParsing:
         # When reset time is earlier same day, should calculate time until reset time next day
         assert evening_result > 20 * 3600, f"Reset time earlier same day should wait until next day (>20 hours), got: {evening_result} seconds"
         assert evening_result <= 24 * 3600, f"Wait time should not exceed 24 hours, got: {evening_result} seconds"
+
+
+class TestFixtureOptimization:
+    """Test suite for validating optimized test structure with reusable fixtures."""
+    
+    def test_test_fixtures_module_provides_common_mock_fixtures(self):
+        """
+        Test that test_fixtures.py module provides common mock fixtures to reduce duplication.
+        
+        This test validates that Task 11.6: Optimize test structure and reduce mock duplication
+        has been completed by ensuring a test_fixtures.py module exists that provides:
+        
+        1. Common mock fixtures that can be reused across tests
+        2. Helper functions for test setup 
+        3. A fixture factory for creating configured mocks
+        
+        The test attempts to import and use these fixtures, which will fail initially
+        because the test_fixtures.py module doesn't exist yet.
+        
+        This test addresses the 84 mock usages and duplication across 32 test functions
+        by providing a centralized location for common test setup patterns.
+        
+        This is the RED phase of TDD - the test must fail first.
+        """
+        try:
+            # Attempt to import the test fixtures module
+            from tests.test_fixtures import (
+                mock_subprocess_success,
+                mock_claude_command_fixture,
+                mock_get_latest_status_fixture,
+                mock_file_system_fixture,
+                setup_temp_environment,
+                create_mock_implementation_plan
+            )
+            
+            # Test that mock_subprocess_success provides a configured subprocess mock
+            subprocess_mock = mock_subprocess_success()
+            assert hasattr(subprocess_mock, 'return_value'), "mock_subprocess_success should return a configured mock"
+            assert hasattr(subprocess_mock.return_value, 'returncode'), "subprocess mock should have returncode attribute"
+            assert hasattr(subprocess_mock.return_value, 'stdout'), "subprocess mock should have stdout attribute"
+            assert hasattr(subprocess_mock.return_value, 'stderr'), "subprocess mock should have stderr attribute"
+            
+            # Test that mock_claude_command_fixture provides a function mock
+            claude_command_mock = mock_claude_command_fixture()
+            assert callable(claude_command_mock), "mock_claude_command_fixture should return a callable mock"
+            
+            # Test calling the claude command mock
+            result = claude_command_mock("/test-command")
+            assert isinstance(result, dict), "claude command mock should return a dictionary"
+            assert "status" in result, "claude command mock result should have status field"
+            
+            # Test that mock_get_latest_status_fixture provides a configured mock
+            status_mock = mock_get_latest_status_fixture()
+            assert callable(status_mock), "mock_get_latest_status_fixture should return a callable mock"
+            
+            # Test that mock_file_system_fixture provides Path and file operation mocks
+            file_system_mocks = mock_file_system_fixture()
+            assert isinstance(file_system_mocks, dict), "file system fixture should return a dictionary of mocks"
+            assert "path_mock" in file_system_mocks, "file system fixture should provide path_mock"
+            assert "open_mock" in file_system_mocks, "file system fixture should provide open_mock"
+            assert "exists_mock" in file_system_mocks, "file system fixture should provide exists_mock"
+            
+            # Test that setup_temp_environment provides a helper function
+            assert callable(setup_temp_environment), "setup_temp_environment should be a callable function"
+            
+            # Test that create_mock_implementation_plan provides a helper function
+            assert callable(create_mock_implementation_plan), "create_mock_implementation_plan should be a callable function"
+            
+            # Test using the helper to create a mock implementation plan
+            mock_plan_content = create_mock_implementation_plan(
+                complete_tasks=["Task 1", "Task 2"], 
+                incomplete_tasks=["Task 3", "Task 4"]
+            )
+            assert isinstance(mock_plan_content, str), "create_mock_implementation_plan should return a string"
+            assert "[X]" in mock_plan_content, "mock plan should contain completed tasks"
+            assert "[ ]" in mock_plan_content, "mock plan should contain incomplete tasks"
+            assert "Task 1" in mock_plan_content, "mock plan should contain specified complete task"
+            assert "Task 3" in mock_plan_content, "mock plan should contain specified incomplete task"
+            
+        except ImportError as e:
+            # This is expected to fail initially - test_fixtures.py doesn't exist yet
+            pytest.fail(f"Cannot import test fixtures from tests.test_fixtures: {e}")
+        except AttributeError as e:
+            # This will fail if the fixtures module exists but doesn't have the expected functions
+            pytest.fail(f"test_fixtures module is missing expected fixture functions: {e}")
 
 
 class TestLogging:
