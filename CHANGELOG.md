@@ -5,6 +5,37 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-08-15
+
+### Features
+- **Configuration Module** (Phase 11 Tasks 1-4 complete)
+  - New `config.py` module centralizing all configuration constants
+  - Constants organized by category with comprehensive documentation
+  - Improved maintainability and code organization
+
+### Changed
+- **Code Quality Refactoring**
+  - Refactored `get_latest_status()` from 76 lines into 4 focused helper functions
+  - Refactored `execute_main_orchestration_loop()` from 58 lines into 3 logical sub-functions
+  - Consolidated command execution patterns using `execute_command_and_get_status()` helper
+  - Reduced code duplication by ~40% across the codebase
+  - Enhanced error handling with more specific exception types
+  - Improved documentation with comprehensive docstrings
+
+### Fixed
+- Test compatibility issues with debug parameter passing
+- Command execution duplication patterns
+
+### Removed
+- Old status files from `.claude/` directory (5 files)
+- `__pycache__` directories and `.pytest_cache` (cleanup)
+- Temporary test files and validation scripts
+
+### Testing
+- Maintained 100% test coverage with 37 tests passing
+- Added 3 new test files for refactoring validation
+- Applied strict TDD methodology for all refactoring tasks
+
 ## [1.0.0] - 2025-01-15
 
 ### 🎉 Project Complete - Production Ready

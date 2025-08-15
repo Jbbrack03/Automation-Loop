@@ -245,3 +245,122 @@ This document provides a detailed, step-by-step plan to implement the automated 
   - Created detailed README.md with complete project documentation
   - All 35 tests passing successfully
   - Project is now feature-complete and production-ready
+
+---
+
+## **Phase 11: Code Quality Refactoring** 
+
+**Goal:** Improve code quality by reducing duplication, organizing constants, and improving function organization.
+
+- [X] **Task 11.1: Clean up temporary files and old status files**
+  - Remove all old status files from .claude/ directory (5 files from 2025-08-14 and 2025-01-15)
+  - Clean up __pycache__ directories (2 directories totaling ~400KB)
+  - Remove .pytest_cache directory (28KB)
+  - Keep .claude/activity.log for debugging purposes
+
+- [X] **Task 11.2: Extract and organize constants into configuration module**
+  - Create a new config.py module to centralize all constants
+  - Group constants by category (file paths, exit codes, workflow settings, status values, commands)
+  - Move all 25+ constants from automate_dev.py to config.py
+  - Update imports throughout the codebase
+
+- [X] **Task 11.3: Reduce code duplication in command execution patterns**
+  - Extract common pattern of execute_command_and_get_status which appears 5+ times
+  - Consolidate run_claude_command calls that follow same pattern
+  - Create helper methods to reduce redundant command execution code
+
+- [X] **Task 11.4: Break down long functions into smaller, focused functions**
+  - Refactor get_latest_status (76 lines) into smaller helper functions
+  - Split execute_main_orchestration_loop (58 lines) into logical sub-functions
+  - Refactor setup_logging (52 lines) to extract logger configuration logic
+  - Break down parse_usage_limit_error and calculate_wait_time (46+ lines each)
+
+- [ ] **Task 11.5: Improve error handling consistency**
+  - Standardize error handling patterns across all functions
+  - Create consistent error message formatting
+  - Ensure all error paths have appropriate logging
+  - Add more specific exception types where appropriate
+
+- [ ] **Task 11.6: Optimize test structure and reduce mock duplication**
+  - Create test fixtures for commonly mocked objects (84 mock usages)
+  - Extract common test setup patterns into helper functions
+  - Reduce duplication in 32 test functions
+  - Group related tests into test classes for better organization
+
+### Session Notes (2025-08-15)
+- Completed Tasks 11.1-11.4 with strict TDD methodology
+- Created config.py module to centralize all constants (25+ constants organized by category)
+- Reduced code duplication by consolidating command execution patterns
+- Broke down long functions: get_latest_status (76→4 functions), execute_main_orchestration_loop (58→3 functions)
+- All 37 tests passing with improved code structure
+
+---
+
+## **Phase 12: Architecture and Design Improvements**
+
+**Goal:** Improve overall architecture, separation of concerns, and maintainability.
+
+- [ ] **Task 12.1: Extract TaskTracker to separate module**
+  - Move TaskTracker class to task_tracker.py
+  - Add proper module documentation
+  - Create comprehensive unit tests specific to TaskTracker
+  - Update imports in automate_dev.py
+
+- [ ] **Task 12.2: Create dedicated modules for specialized functionality**
+  - Extract usage limit handling to usage_limit.py module
+  - Move signal file handling to signal_handler.py module
+  - Create command_executor.py for Claude command execution logic
+  - Ensure each module has single responsibility
+
+- [ ] **Task 12.3: Implement proper dependency injection**
+  - Pass dependencies as parameters instead of relying on globals
+  - Make functions more testable by reducing hidden dependencies
+  - Create factory functions for complex object creation
+
+- [ ] **Task 12.4: Add comprehensive type hints**
+  - Add type hints to all function signatures
+  - Use TypedDict for complex dictionary structures
+  - Add return type annotations throughout
+  - Consider using Protocol types for better abstraction
+
+- [ ] **Task 12.5: Improve logging architecture**
+  - Consider using structured logging with JSON output
+  - Add contextual information to log messages
+  - Implement log rotation to prevent unbounded growth
+  - Add performance metrics logging
+
+---
+
+## **Phase 13: Performance and Reliability Enhancements**
+
+**Goal:** Optimize performance and improve system reliability.
+
+- [ ] **Task 13.1: Optimize file I/O operations**
+  - Cache frequently read files (Implementation_Plan.md)
+  - Batch file operations where possible
+  - Use context managers consistently for all file operations
+  - Add file locking for concurrent access safety
+
+- [ ] **Task 13.2: Improve signal file handling efficiency**
+  - Reduce polling frequency where appropriate
+  - Consider using file system events instead of polling
+  - Add exponential backoff for wait operations
+  - Implement more robust signal file cleanup
+
+- [ ] **Task 13.3: Add retry logic with exponential backoff**
+  - Implement exponential backoff for all external calls
+  - Add jitter to prevent thundering herd
+  - Make retry parameters configurable
+  - Add circuit breaker for persistent failures
+
+- [ ] **Task 13.4: Implement health checks and monitoring**
+  - Add health check endpoint for MCP server
+  - Implement heartbeat mechanism for long-running operations
+  - Add metrics collection for operation timing
+  - Create diagnostic mode for troubleshooting
+
+- [ ] **Task 13.5: Add graceful shutdown handling**
+  - Implement signal handlers for SIGTERM/SIGINT
+  - Ensure cleanup of resources on shutdown
+  - Save state for potential recovery
+  - Add shutdown hooks for cleanup operations

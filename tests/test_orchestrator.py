@@ -1162,18 +1162,18 @@ class TestMainOrchestrationLoop:
             # First task cycle
             call("/clear"),
             call("/continue"),  
-            call("/validate"),
-            call("/update"),
+            call("/validate", debug=False),
+            call("/update", debug=False),
             # Second task cycle
             call("/clear"),
             call("/continue"),
-            call("/validate"), 
-            call("/update"),
+            call("/validate", debug=False), 
+            call("/update", debug=False),
             # Third cycle when all tasks complete
             call("/clear"),
             call("/continue"),
-            call("/validate"),
-            call("/update"),
+            call("/validate", debug=False),
+            call("/update", debug=False),
             # Refactoring check (with debug=False)
             call("/checkin", debug=False),
             call("/refactor", debug=False)
@@ -1199,7 +1199,8 @@ class TestMainOrchestrationLoop:
         2. The retry logic respects the limit returned by increment_fix_attempts
         3. When max attempts are exceeded, the task should be skipped
         """
-        from automate_dev import TaskTracker, MAX_FIX_ATTEMPTS
+        from automate_dev import TaskTracker
+        from config import MAX_FIX_ATTEMPTS
         
         # Test the TaskTracker increment_fix_attempts behavior
         tracker = TaskTracker()
@@ -1332,8 +1333,8 @@ class TestRefactoringLoop:
             # Initial TDD cycle (runs even when all tasks complete to validate)
             call("/clear"),
             call("/continue"),
-            call("/validate"),
-            call("/update"),
+            call("/validate", debug=False),
+            call("/update", debug=False),
             
             # First refactoring cycle (execute_command_and_get_status adds debug=False)
             call("/checkin", debug=False),
@@ -1424,8 +1425,8 @@ class TestRefactoringLoop:
             # Initial TDD cycle
             call("/clear"),
             call("/continue"),
-            call("/validate"),
-            call("/update"),
+            call("/validate", debug=False),
+            call("/update", debug=False),
             
             # Refactoring cycle (execute_command_and_get_status adds debug=False)
             call("/checkin", debug=False),
@@ -1546,14 +1547,14 @@ class TestRefactoringLoop:
             # First TDD cycle for the incomplete task
             call("/clear"),
             call("/continue"),
-            call("/validate"),
-            call("/update"),
+            call("/validate", debug=False),
+            call("/update", debug=False),
             
             # Second TDD cycle when all tasks are complete
             call("/clear"),
             call("/continue"),
-            call("/validate"),
-            call("/update"),
+            call("/validate", debug=False),
+            call("/update", debug=False),
             
             # Refactoring loop (with debug=False)
             call("/checkin", debug=False),

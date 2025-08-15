@@ -16,80 +16,18 @@ from typing import Any, Dict, List, Optional, Tuple
 import datetime
 import pytz
 
-# File path constants
-IMPLEMENTATION_PLAN_FILE = "Implementation Plan.md"
-PRD_FILE = "PRD.md"
-CLAUDE_FILE = "CLAUDE.md"
-SIGNAL_FILE = ".claude/signal_task_complete"
-SETTINGS_FILE = ".claude/settings.local.json"
-
-# Default settings configuration structure
-# This configuration sets up the Stop hook to create a signal file when Claude sessions end
-# The hook enables reliable detection of task completion in automated workflows
-DEFAULT_SETTINGS_CONFIG = {
-    "hooks": {
-        "Stop": [{
-            "hooks": [{
-                "type": "command",
-                "command": f"touch {SIGNAL_FILE}"
-            }]
-        }]
-    }
-}
-
-# Serialize the configuration to JSON string for file writing
-DEFAULT_SETTINGS_JSON = json.dumps(DEFAULT_SETTINGS_CONFIG, indent=2)
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_MISSING_CRITICAL_FILE = 1
-
-# Workflow control constants
-MAX_FIX_ATTEMPTS = 3
-MIN_WAIT_TIME = 60  # minimum seconds to wait when usage limit reset time is in the past
-SIGNAL_WAIT_SLEEP_INTERVAL = 0.1  # seconds between signal file checks
-SIGNAL_WAIT_TIMEOUT = 30.0  # maximum seconds to wait for signal file
-
-# Time parsing constants for calculate_wait_time
-HOURS_12_CLOCK_CONVERSION = 12  # hours to add/subtract for 12-hour clock conversion
-MIDNIGHT_HOUR_12_FORMAT = 12  # hour value that represents midnight in 12-hour format
-NOON_HOUR_12_FORMAT = 12  # hour value that represents noon in 12-hour format
-
-# Parsing constants
-USAGE_LIMIT_TIME_PATTERN = r'try again at (\w+) \(([^)]+)\)'
-
-# Status constants
-VALIDATION_PASSED = "validation_passed"
-VALIDATION_FAILED = "validation_failed"
-PROJECT_COMPLETE = "project_complete"
-PROJECT_INCOMPLETE = "project_incomplete"
-
-# Refactoring status constants
-CHECKIN_COMPLETE = "checkin_complete"
-REFACTORING_NEEDED = "refactoring_needed"
-NO_REFACTORING_NEEDED = "no_refactoring_needed"
-FINALIZATION_COMPLETE = "finalization_complete"
-
-# Command constants
-CLEAR_CMD = "/clear"
-CONTINUE_CMD = "/continue"
-VALIDATE_CMD = "/validate"
-UPDATE_CMD = "/update"
-CORRECT_CMD = "/correct"
-CHECKIN_CMD = "/checkin"
-REFACTOR_CMD = "/refactor"
-FINALIZE_CMD = "/finalize"
-
-
-# Module-specific loggers for different components
-LOGGERS = {
-    'orchestrator': None,
-    'task_tracker': None,
-    'command_executor': None,
-    'validation': None,
-    'error_handler': None,
-    'usage_limit': None
-}
+from config import (
+    IMPLEMENTATION_PLAN_FILE, PRD_FILE, CLAUDE_FILE, SIGNAL_FILE, SETTINGS_FILE,
+    EXIT_SUCCESS, EXIT_MISSING_CRITICAL_FILE,
+    MAX_FIX_ATTEMPTS, MIN_WAIT_TIME, SIGNAL_WAIT_SLEEP_INTERVAL, SIGNAL_WAIT_TIMEOUT,
+    VALIDATION_PASSED, VALIDATION_FAILED, PROJECT_COMPLETE, PROJECT_INCOMPLETE,
+    CLEAR_CMD, CONTINUE_CMD, VALIDATE_CMD, UPDATE_CMD, CORRECT_CMD,
+    CHECKIN_COMPLETE, REFACTORING_NEEDED, NO_REFACTORING_NEEDED, FINALIZATION_COMPLETE,
+    CHECKIN_CMD, REFACTOR_CMD, FINALIZE_CMD,
+    DEFAULT_SETTINGS_CONFIG, DEFAULT_SETTINGS_JSON,
+    HOURS_12_CLOCK_CONVERSION, MIDNIGHT_HOUR_12_FORMAT, NOON_HOUR_12_FORMAT,
+    USAGE_LIMIT_TIME_PATTERN, LOGGERS
+)
 
 
 def setup_logging() -> None:
@@ -572,17 +510,29 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
 def _cleanup_status_files(status_files: List[Path], debug: bool = False) -> None:
     """Clean up all status files after reading.
     
+    Attempts to delete each status file in the provided list. Continues processing
+    even if individual files cannot be deleted, ensuring partial cleanup in
+    error scenarios.
+    
     Args:
-        status_files: List of status file paths to delete
-        debug: Whether to enable debug logging for troubleshooting
+        status_files (List[Path]): List of status file paths to delete.
+                                  Can be empty or contain non-existent files.
+        debug (bool): Whether to enable debug logging for troubleshooting.
+                     Defaults to False for production use.
+                     
+    Note:
+        File deletion errors are handled gracefully and only reported
+        in debug mode. This prevents cleanup failures from breaking
+        the main workflow.
     """
     for status_file in status_files:
         try:
             status_file.unlink()
             if debug:
                 print(f"Debug: Cleaned up status file: {status_file}")
-        except OSError as e:
+        except (OSError, FileNotFoundError, PermissionError) as e:
             # Continue if file deletion fails, but log if debug enabled
+            # Handle specific exceptions that can occur during file operations
             if debug:
                 print(f"Warning: Failed to delete status file {status_file}: {e}")
 
@@ -637,10 +587,7 @@ def execute_tdd_cycle() -> str:
     run_claude_command(CONTINUE_CMD)
     
     logger.debug("Executing /validate command")
-    run_claude_command(VALIDATE_CMD)
-    
-    logger.debug("Getting latest validation status")
-    status = get_latest_status()
+    status = execute_command_and_get_status(VALIDATE_CMD)
     logger.info(f"TDD cycle completed with status: {status}")
     
     return status
@@ -649,27 +596,35 @@ def execute_tdd_cycle() -> str:
 def handle_validation_result(validation_status: str, task: str, tracker: TaskTracker) -> bool:
     """Handle the result of validation and determine next action.
     
-    Processes validation results and executes appropriate follow-up actions:
-    - For VALIDATION_PASSED: Updates task and checks project completion
-    - For VALIDATION_FAILED: Attempts correction within retry limits
+    Processes validation results and executes appropriate follow-up actions based
+    on the validation status. Manages task completion, project completion detection,
+    and retry logic for failed validations.
     
     Args:
-        validation_status: The status returned from validation
-        task: The current task being processed
-        tracker: TaskTracker instance for managing failure counts
+        validation_status (str): The status returned from validation.
+                               Expected values: VALIDATION_PASSED, VALIDATION_FAILED.
+        task (str): The current task description being processed.
+                   Used for logging and retry tracking.
+        tracker (TaskTracker): TaskTracker instance for managing failure counts
+                              and retry attempts per task.
         
     Returns:
-        True if the main loop should continue, False if it should exit
+        bool: True if the main loop should continue processing more tasks or retries,
+              False if the loop should exit (not used in current implementation).
         
     Raises:
-        SystemExit: When project is complete (EXIT_SUCCESS)
+        SystemExit: When project is complete (EXIT_SUCCESS) through handle_project_completion.
+        
+    Note:
+        This function handles the complete post-validation workflow including
+        task updates, project completion detection, and correction attempts
+        within configured retry limits.
     """
     if validation_status == VALIDATION_PASSED:
         # Validation passed - update the task as complete
-        run_claude_command(UPDATE_CMD)
+        project_status = execute_command_and_get_status(UPDATE_CMD)
         
         # Check if project is complete
-        project_status = get_latest_status()
         if project_status == PROJECT_COMPLETE:
             handle_project_completion()
         # Continue to next task if project is incomplete
@@ -679,7 +634,7 @@ def handle_validation_result(validation_status: str, task: str, tracker: TaskTra
         # Validation failed - attempt correction if under retry limit
         if tracker.increment_fix_attempts(task):
             # Still under retry limit - attempt correction
-            run_claude_command(CORRECT_CMD)
+            execute_command_and_get_status(CORRECT_CMD)
             # After correction, loop will re-run validation on next iteration
             return True
         else:
@@ -771,10 +726,10 @@ def execute_refactoring_loop() -> None:
     """
     while True:
         # Start with checkin to assess current state
-        checkin_status = execute_command_and_get_status(CHECKIN_CMD)
+        checkin_status = execute_command_and_get_status(CHECKIN_CMD, debug=False)
         
         # Run refactor analysis to identify improvement opportunities
-        refactor_status = execute_command_and_get_status(REFACTOR_CMD)
+        refactor_status = execute_command_and_get_status(REFACTOR_CMD, debug=False)
         
         # If no refactoring needed, workflow is complete
         if refactor_status == NO_REFACTORING_NEEDED:
@@ -783,7 +738,7 @@ def execute_refactoring_loop() -> None:
         
         # If refactoring needed, execute finalization
         if refactor_status == REFACTORING_NEEDED:
-            finalize_status = execute_command_and_get_status(FINALIZE_CMD)
+            finalize_status = execute_command_and_get_status(FINALIZE_CMD, debug=False)
             # Continue loop for next refactoring cycle
             continue
 
@@ -1065,6 +1020,92 @@ def calculate_wait_time(parsed_reset_info: Dict[str, Any]) -> int:
         raise ValueError(f"Unsupported format type: {format_type}. Supported formats: 'unix_timestamp', 'natural_language'")
 
 
+def _find_status_files() -> List[Path]:
+    """Find all status_*.json files in .claude/ directory.
+    
+    Scans the .claude/ directory for files matching the status_*.json pattern.
+    Handles missing directories gracefully by returning an empty list.
+    
+    Returns:
+        List[Path]: List of Path objects for all status files found, 
+                   or empty list if none exist or directory is missing.
+                   
+    Raises:
+        OSError: If directory access permissions are insufficient (rare case).
+    """
+    claude_dir = Path('.claude')
+    
+    # Handle missing .claude directory gracefully
+    if not claude_dir.exists():
+        return []
+    
+    try:
+        # Find all status files using glob pattern
+        return list(claude_dir.glob('status_*.json'))
+    except OSError:
+        # Handle rare permission or filesystem issues
+        return []
+
+
+def _get_newest_file(status_files: List[Path]) -> Optional[Path]:
+    """Determine which status file is newest based on lexicographic timestamp sorting.
+    
+    Status files follow the pattern 'status_YYYYMMDD_HHMMSS.json' where timestamps
+    are embedded in filenames. Lexicographic sorting naturally orders them chronologically.
+    
+    Args:
+        status_files (List[Path]): List of status file paths to sort.
+                                  Can be empty or contain non-status files.
+        
+    Returns:
+        Optional[Path]: Path to the newest status file based on filename timestamp,
+                       or None if the input list is empty.
+                       
+    Note:
+        This function modifies the input list by sorting it in-place.
+        If timestamp format is invalid, lexicographic sorting still works
+        but may not reflect actual chronological order.
+    """
+    if not status_files:
+        return None
+    
+    # Sort files lexicographically (newest timestamp will be last)
+    # This works because timestamps follow YYYYMMDD_HHMMSS format
+    status_files.sort(key=lambda p: p.name)
+    return status_files[-1]
+
+
+def _read_status_file(status_file: Path) -> Optional[str]:
+    """Read and parse JSON from a specific status file.
+    
+    Attempts to read the JSON file and extract the 'status' field value.
+    Handles all common file and JSON parsing errors gracefully.
+    
+    Args:
+        status_file (Path): Path to the status file to read. Should be a valid
+                           file path, typically ending in .json.
+        
+    Returns:
+        Optional[str]: The value of the 'status' field from the JSON file,
+                      or None if the file cannot be read, JSON is invalid,
+                      or the 'status' field is missing.
+                      
+    Raises:
+        No exceptions are raised - all errors are handled gracefully.
+        
+    Note:
+        This function expects JSON files with at least a 'status' field.
+        Missing 'status' fields return None rather than raising KeyError.
+    """
+    try:
+        with open(status_file, 'r', encoding='utf-8') as f:
+            status_data = json.load(f)
+        return status_data.get('status')
+    except (json.JSONDecodeError, IOError, OSError, UnicodeDecodeError):
+        # Handle JSON parsing, file I/O, and encoding errors gracefully
+        return None
+
+
 def get_latest_status(debug: bool = False) -> Optional[str]:
     """Get the latest status from MCP server status files.
     
@@ -1087,17 +1128,8 @@ def get_latest_status(debug: bool = False) -> Optional[str]:
         This function deletes ALL status files after reading to prevent stale
         status confusion. This is critical for the workflow state management.
     """
-    # Find all status files using pathlib for better cross-platform compatibility
-    claude_dir = Path('.claude')
-    
-    # Handle missing .claude directory gracefully
-    if not claude_dir.exists():
-        if debug:
-            print("Debug: .claude directory does not exist")
-        return None
-    
     # Find all status files
-    status_files = list(claude_dir.glob('status_*.json'))
+    status_files = _find_status_files()
     
     # Return None if no status files exist
     if not status_files:
@@ -1105,43 +1137,110 @@ def get_latest_status(debug: bool = False) -> Optional[str]:
             print("Debug: No status files found in .claude directory")
         return None
     
-    # Sort files lexicographically (newest timestamp will be last)
-    status_files.sort(key=lambda p: p.name)
-    newest_file = status_files[-1]
+    # Get the newest file
+    newest_file = _get_newest_file(status_files)
     
     if debug:
         print(f"Debug: Found {len(status_files)} status files, reading newest: {newest_file}")
     
     # Read and parse the newest file
-    try:
-        with open(newest_file, 'r', encoding='utf-8') as f:
-            status_data = json.load(f)
-        
-        if debug:
-            print(f"Debug: Successfully read JSON from {newest_file}")
-            
-    except json.JSONDecodeError as e:
-        # JSON parsing error - return None for graceful degradation
-        if debug:
-            print(f"Debug: JSON parsing error in {newest_file}: {e}")
-        return None
-    except (IOError, OSError) as e:
-        # File I/O error - return None for graceful degradation
-        if debug:
-            print(f"Debug: File I/O error reading {newest_file}: {e}")
-        return None
-    
-    # Extract status value
-    status = status_data.get('status')
+    status = _read_status_file(newest_file)
     
     if debug:
-        print(f"Debug: Extracted status: {status}")
+        if status:
+            print(f"Debug: Successfully read JSON from {newest_file}")
+            print(f"Debug: Extracted status: {status}")
+        else:
+            print(f"Debug: Failed to read status from {newest_file}")
     
     # Clean up all status files after successful reading
-    _cleanup_status_files(status_files, debug=debug)
+    _cleanup_status_files(status_files)
     
     return status
 
+
+
+def _handle_project_completion_validation(validation_status: str) -> None:
+    """Handle final validation when all tasks are complete.
+    
+    Manages the transition from task processing to refactoring workflow,
+    including final validation, project completion marking, and error handling.
+    
+    Args:
+        validation_status (str): The validation status from the TDD cycle.
+                                Should be compared against VALIDATION_PASSED.
+                                
+    Raises:
+        SystemExit: When validation fails (exit code 1) or when project
+                   completion is successful but not marked as complete (exit code 0).
+                   
+    Note:
+        This function may not return if it triggers project completion
+        or system exit conditions.
+    """
+    if validation_status == VALIDATION_PASSED:
+        # Update to mark project complete
+        update_status = execute_command_and_get_status(UPDATE_CMD)
+        if update_status == PROJECT_COMPLETE:
+            # Enter refactoring workflow
+            handle_project_completion()
+            return  # For testing - refactoring loop will exit
+        else:
+            # Exit if not marked as complete
+            sys.exit(EXIT_SUCCESS)
+            return  # For testing
+    else:
+        # Final validation failed
+        logger = LOGGERS['error_handler']
+        error_msg = f"Final validation failed with status: {validation_status}"
+        logger.error(error_msg)
+        print(f"ERROR: {error_msg}")  # Keep user-facing error
+        sys.exit(1)
+        return  # For testing
+
+
+def _process_single_task_iteration(tracker: TaskTracker) -> bool:
+    """Process a single iteration of the task orchestration loop.
+    
+    Handles getting the next task, executing the TDD cycle, and determining
+    whether to continue processing or handle project completion.
+    
+    Args:
+        tracker (TaskTracker): The task tracker instance for managing task state.
+                              Must be initialized and ready for task processing.
+                              
+    Returns:
+        bool: True if loop should continue with next iteration,
+              False if all tasks are complete and project completion
+              should be handled.
+              
+    Note:
+        This function may trigger system exit through project completion
+        validation, in which case it will not return.
+    """
+    logger = LOGGERS['orchestrator']
+    
+    # Get next task
+    task, all_complete = tracker.get_next_task()
+    
+    if task:
+        logger.info(f"Processing task: {task}")
+    else:
+        logger.info("No more tasks to process - checking final validation")
+    
+    # Always execute TDD cycle - even when all tasks are complete,
+    # we need to validate the final state before transitioning to refactoring
+    logger.debug("Executing TDD cycle")
+    validation_status = execute_tdd_cycle()
+    
+    if all_complete:
+        # All tasks complete - handle final validation and potential refactoring
+        _handle_project_completion_validation(validation_status)
+        return False  # Should not reach here due to exits in completion handler
+    else:
+        # Normal task processing
+        should_continue = handle_validation_result(validation_status, task, tracker)
+        return should_continue
 
 
 def execute_main_orchestration_loop() -> None:
@@ -1155,6 +1254,10 @@ def execute_main_orchestration_loop() -> None:
     
     When all tasks are complete, delegates to project completion handler
     which manages the transition to the refactoring workflow.
+    
+    Note:
+        This function may not return normally if project completion
+        triggers system exit or refactoring workflow entry.
     """
     logger = LOGGERS['orchestrator']
     tracker = TaskTracker()
@@ -1162,46 +1265,9 @@ def execute_main_orchestration_loop() -> None:
     logger.info("Starting main orchestration loop")
     
     while True:
-        # Get next task
-        task, all_complete = tracker.get_next_task()
-        
-        if task:
-            logger.info(f"Processing task: {task}")
-        else:
-            logger.info("No more tasks to process - checking final validation")
-        
-        # Always execute TDD cycle - even when all tasks are complete,
-        # we need to validate the final state before transitioning to refactoring
-        logger.debug("Executing TDD cycle")
-        validation_status = execute_tdd_cycle()
-        
-        if all_complete:
-            # All tasks complete - handle final validation and potential refactoring
-            if validation_status == VALIDATION_PASSED:
-                # Update to mark project complete
-                run_claude_command(UPDATE_CMD)
-                update_status = get_latest_status()
-                if update_status == PROJECT_COMPLETE:
-                    # Enter refactoring workflow
-                    handle_project_completion()
-                    return  # For testing - refactoring loop will exit
-                else:
-                    # Exit if not marked as complete
-                    sys.exit(EXIT_SUCCESS)
-                    return  # For testing
-            else:
-                # Final validation failed
-                logger = LOGGERS['error_handler']
-                error_msg = f"Final validation failed with status: {validation_status}"
-                logger.error(error_msg)
-                print(f"ERROR: {error_msg}")  # Keep user-facing error
-                sys.exit(1)
-                return  # For testing
-        else:
-            # Normal task processing
-            should_continue = handle_validation_result(validation_status, task, tracker)
-            if should_continue:
-                continue
+        should_continue = _process_single_task_iteration(tracker)
+        if not should_continue:
+            break
 
 
 def main():
