@@ -1,0 +1,1 @@
+# File removed - was temporary for refactoring validation

@@ -1570,3 +1570,349 @@ class TestRefactoringLoop:
         # Verify get_latest_status was called the correct number of times
         # Note: execute_command_and_get_status can sometimes result in an extra call
         assert mock_get_latest_status.call_count in [10, 11, 12], f"Expected 10-12 calls to get_latest_status, got {mock_get_latest_status.call_count}"
+
+
+class TestUsageLimitIntegration:
+    """Test suite for integrating usage limit handling into run_claude_command."""
+    
+    @patch('os.remove')
+    @patch('os.path.exists')
+    @patch('time.sleep')
+    @patch('automate_dev.calculate_wait_time')
+    @patch('automate_dev.parse_usage_limit_error')
+    @patch('subprocess.run')
+    def test_run_claude_command_detects_usage_limit_and_retries_successfully(
+            self, mock_subprocess_run, mock_parse_usage_limit, mock_calculate_wait_time, 
+            mock_sleep, mock_exists, mock_remove):
+        """
+        Test that run_claude_command detects usage limit errors and retries after waiting.
+        
+        This test verifies the complete usage limit handling integration:
+        1. First subprocess.run call returns usage limit error in stdout/stderr
+        2. run_claude_command detects the usage limit pattern in the output
+        3. Calls parse_usage_limit_error to extract reset time information
+        4. Calls calculate_wait_time to determine how long to wait
+        5. Calls time.sleep to wait for the specified duration
+        6. Retries the subprocess.run call with the same command
+        7. Second call succeeds and returns valid JSON output
+        8. Function returns the successful result
+        
+        The test follows FIRST principles:
+        - Fast: Uses mocks to avoid actual subprocess calls and waiting
+        - Independent: Runs in isolation with no external dependencies
+        - Repeatable: Produces consistent results with mocked behavior
+        - Self-validating: Has clear assertions about retry behavior
+        - Timely: Tests the integration before implementation exists
+        
+        This test will initially fail because run_claude_command doesn't detect
+        or handle usage limit errors yet - it needs to be modified to:
+        1. Check output for usage limit indicators
+        2. Call usage limit parsing and calculation functions
+        3. Sleep and retry when usage limits are detected
+        
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Mock subprocess.run to return usage limit error first, then success
+        usage_limit_result = MagicMock()
+        usage_limit_result.returncode = 1
+        usage_limit_result.stdout = '{"error": "usage_limit", "message": "You can try again at 7pm (America/Chicago)"}'
+        usage_limit_result.stderr = "Claude API Error: Usage limit exceeded. You can try again at 7pm (America/Chicago)."
+        
+        success_result = MagicMock()
+        success_result.returncode = 0
+        success_result.stdout = '{"status": "success", "output": "Command completed after retry"}'
+        success_result.stderr = ""
+        
+        # First call returns usage limit error, second call succeeds
+        mock_subprocess_run.side_effect = [usage_limit_result, success_result]
+        
+        # Mock parse_usage_limit_error to return parsed reset information
+        mock_parse_usage_limit.return_value = {
+            "reset_time": "7pm",
+            "timezone": "America/Chicago", 
+            "format": "natural_language"
+        }
+        
+        # Mock calculate_wait_time to return 3600 seconds (1 hour wait)
+        mock_calculate_wait_time.return_value = 3600
+        
+        # Mock signal file to exist immediately after both command attempts
+        mock_exists.return_value = True
+        
+        # Import the function to test
+        from automate_dev import run_claude_command
+        
+        # Call the function - should detect usage limit, wait, and retry
+        test_command = "/continue"
+        result = run_claude_command(test_command)
+        
+        # Verify subprocess.run was called twice (initial attempt + retry)
+        assert mock_subprocess_run.call_count == 2, f"Expected 2 calls to subprocess.run (initial + retry), got {mock_subprocess_run.call_count}"
+        
+        # Verify both calls used the same command array
+        expected_command = [
+            "claude",
+            "-p", test_command,
+            "--output-format", "json",
+            "--dangerously-skip-permissions"
+        ]
+        
+        first_call_args = mock_subprocess_run.call_args_list[0][0][0]
+        second_call_args = mock_subprocess_run.call_args_list[1][0][0]
+        
+        assert first_call_args == expected_command, f"First call should use correct command array"
+        assert second_call_args == expected_command, f"Retry call should use same command array"
+        
+        # Verify usage limit detection and parsing was called
+        mock_parse_usage_limit.assert_called_once()
+        # Should be called with either stdout or stderr that contains usage limit message
+        parse_call_args = mock_parse_usage_limit.call_args[0][0]
+        assert "usage_limit" in parse_call_args or "7pm" in parse_call_args, "parse_usage_limit should be called with usage limit error message"
+        
+        # Verify wait time calculation was called with parsed reset info
+        mock_calculate_wait_time.assert_called_once_with({
+            "reset_time": "7pm",
+            "timezone": "America/Chicago",
+            "format": "natural_language"
+        })
+        
+        # Verify time.sleep was called with calculated wait time
+        mock_sleep.assert_called_once_with(3600)
+        
+        # Verify signal file cleanup was performed twice (once per command attempt)
+        assert mock_remove.call_count == 2, f"Expected 2 calls to os.remove (cleanup after each attempt), got {mock_remove.call_count}"
+        
+        # Verify function returns the successful result (from second attempt)
+        assert isinstance(result, dict), "Result should be parsed JSON from successful retry"
+        assert result["status"] == "success", "Result should be from successful retry attempt"
+        assert result["output"] == "Command completed after retry", "Result should contain retry success message"
+
+
+class TestUsageLimitParsing:
+    """Test suite for usage limit error parsing functionality."""
+    
+    def test_parse_usage_limit_error_natural_language_format_simple_case(self):
+        """
+        Test that parse_usage_limit_error correctly extracts reset time from natural language format.
+        
+        This test verifies the simplest case of parsing a natural language usage limit error
+        message that contains a time and timezone specification. The function should extract
+        the reset time information and return it in a format that can be used by the orchestrator
+        to calculate wait times.
+        
+        Example error message: "You can try again at 7pm (America/Chicago)"
+        
+        The function should parse this and return the time and timezone information
+        so that calculate_wait_time can compute the appropriate wait duration.
+        
+        This test will initially fail because the parse_usage_limit_error function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Import the function to test
+        from automate_dev import parse_usage_limit_error
+        
+        # Test the simplest natural language format
+        error_message = "You have reached your usage limit. You can try again at 7pm (America/Chicago)."
+        
+        # Call the function to parse the error message
+        result = parse_usage_limit_error(error_message)
+        
+        # Verify that the function returns a dictionary with expected structure
+        assert isinstance(result, dict), "parse_usage_limit_error should return a dictionary"
+        
+        # Verify that it contains the necessary information to calculate wait time
+        assert "reset_time" in result, "Result should contain 'reset_time' key"
+        assert "timezone" in result, "Result should contain 'timezone' key"
+        
+        # Verify that the parsed values are correct
+        assert result["reset_time"] == "7pm", f"Expected reset_time '7pm', got: {result['reset_time']}"
+        assert result["timezone"] == "America/Chicago", f"Expected timezone 'America/Chicago', got: {result['timezone']}"
+        
+        # Verify that the function correctly identifies this as natural language format
+        assert result["format"] == "natural_language", f"Expected format 'natural_language', got: {result.get('format')}"
+    
+    def test_parse_usage_limit_error_unix_timestamp_format(self):
+        """
+        Test that parse_usage_limit_error correctly parses JSON format with Unix timestamp.
+        
+        This test verifies that the function can handle JSON response format containing
+        a reset_at field with a Unix timestamp value. The function should parse the JSON,
+        extract the reset_at value, and return it in a format that can be used by the
+        orchestrator to calculate wait times.
+        
+        Example JSON: {"error": "usage_limit", "reset_at": 1737000000}
+        
+        The function should parse this and return:
+        - format: "unix_timestamp" 
+        - reset_at: the Unix timestamp value (1737000000)
+        
+        This test will initially fail because the parse_usage_limit_error function
+        currently only handles natural language format, not JSON format.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Import the function to test
+        from automate_dev import parse_usage_limit_error
+        
+        # Test JSON format with Unix timestamp
+        json_error_message = '{"error": "usage_limit", "reset_at": 1737000000}'
+        
+        # Call the function to parse the JSON error message
+        result = parse_usage_limit_error(json_error_message)
+        
+        # Verify that the function returns a dictionary with expected structure
+        assert isinstance(result, dict), "parse_usage_limit_error should return a dictionary"
+        
+        # Verify that it correctly identifies this as unix_timestamp format
+        assert result["format"] == "unix_timestamp", f"Expected format 'unix_timestamp', got: {result.get('format')}"
+        
+        # Verify that the parsed Unix timestamp is correct
+        assert "reset_at" in result, "Result should contain 'reset_at' key for unix_timestamp format"
+        assert result["reset_at"] == 1737000000, f"Expected reset_at 1737000000, got: {result.get('reset_at')}"
+        
+        # For unix_timestamp format, reset_time and timezone should not be used
+        # but we'll verify they're either not present or empty/None
+        # This allows flexibility in implementation approach
+    
+    def test_calculate_wait_time_unix_timestamp_format_returns_correct_seconds(self):
+        """
+        Test that calculate_wait_time correctly calculates seconds to wait for Unix timestamp format.
+        
+        This test verifies that the calculate_wait_time helper function:
+        1. Takes parsed reset information from parse_usage_limit_error
+        2. For Unix timestamp format, calculates difference between reset_at and current time
+        3. Returns the number of seconds to wait until the reset time
+        4. Handles the case where current time is mocked for predictable results
+        
+        Given a parsed result with unix_timestamp format and a specific reset_at value,
+        when calculate_wait_time is called with mocked current time,
+        then it should return the correct number of seconds to wait.
+        
+        This test will initially fail because the calculate_wait_time function doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Import the function to test
+        from automate_dev import calculate_wait_time
+        import time
+        
+        # Mock the current time to a known value for predictable results
+        # Using Unix timestamp: 1736950000 (January 15, 2025, 10:00:00 AM UTC)
+        mock_current_time = 1736950000
+        
+        # Create parsed reset information for unix_timestamp format
+        # Reset time is 2 hours later: 1736957200 (January 15, 2025, 12:00:00 PM UTC)
+        parsed_reset_info = {
+            "reset_at": 1736957200,  # 2 hours after current time
+            "format": "unix_timestamp"
+        }
+        
+        # Expected wait time is 2 hours = 7200 seconds
+        expected_wait_seconds = 7200
+        
+        # Mock time.time() to return our known current time
+        with patch('time.time') as mock_time:
+            mock_time.return_value = mock_current_time
+            
+            # Call calculate_wait_time with the parsed reset information
+            result = calculate_wait_time(parsed_reset_info)
+        
+        # Verify that the function returns the correct number of seconds
+        assert isinstance(result, int), "calculate_wait_time should return an integer for seconds"
+        assert result == expected_wait_seconds, f"Expected {expected_wait_seconds} seconds wait time, got: {result}"
+        
+        # Verify that time.time() was called to get current time
+        mock_time.assert_called_once()
+        
+        # Test edge case: reset time in the past (should return 0 or small positive value)
+        past_reset_info = {
+            "reset_at": mock_current_time - 3600,  # 1 hour ago
+            "format": "unix_timestamp"
+        }
+        
+        with patch('time.time') as mock_time_past:
+            mock_time_past.return_value = mock_current_time
+            
+            past_result = calculate_wait_time(past_reset_info)
+        
+        # When reset time is in the past, should return 0 (no wait needed)
+        assert past_result >= 0, f"Wait time should be non-negative, got: {past_result}"
+        assert past_result <= 60, f"Past reset time should result in minimal wait (0-60 seconds for safety), got: {past_result}"
+    
+    def test_calculate_wait_time_natural_language_format_returns_correct_seconds(self):
+        """
+        Test that calculate_wait_time correctly calculates seconds to wait for natural language format.
+        
+        This test verifies that the calculate_wait_time helper function:
+        1. Takes parsed reset information with natural language format (reset_time + timezone)
+        2. Parses the natural language time like "7pm" in timezone "America/Chicago"
+        3. Calculates difference between that time today and current time
+        4. Returns the number of seconds to wait until the reset time
+        5. Handles the case where current time is mocked for predictable results
+        
+        Given a parsed result with natural_language format containing reset_time "7pm" 
+        and timezone "America/Chicago", when calculate_wait_time is called with mocked 
+        current datetime, then it should return the correct number of seconds to wait.
+        
+        This test will initially fail because calculate_wait_time currently only handles
+        unix_timestamp format, not natural_language format.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Import the function to test
+        from automate_dev import calculate_wait_time
+        from datetime import datetime
+        import pytz
+        
+        # Mock the current datetime to a known value for predictable results
+        # Set current time to 3:00 PM (15:00) in America/Chicago timezone
+        # Reset time is 7:00 PM (19:00) same day, so 4 hours = 14400 seconds later
+        chicago_tz = pytz.timezone('America/Chicago')
+        mock_current_datetime = chicago_tz.localize(datetime(2025, 1, 15, 15, 0, 0))  # 3:00 PM
+        
+        # Create parsed reset information for natural_language format
+        # Reset time is "7pm" in "America/Chicago" timezone  
+        parsed_reset_info = {
+            "reset_time": "7pm",
+            "timezone": "America/Chicago", 
+            "format": "natural_language"
+        }
+        
+        # Expected wait time is 4 hours = 14400 seconds (from 3pm to 7pm same day)
+        expected_wait_seconds = 14400
+        
+        # Mock datetime.now() to return our known current time
+        with patch('datetime.datetime') as mock_datetime:
+            # Configure mock to return our specific time when datetime.now() is called
+            mock_datetime.now.return_value = mock_current_datetime
+            # Also need to preserve the datetime class for other operations
+            mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            
+            # Call calculate_wait_time with the parsed reset information
+            result = calculate_wait_time(parsed_reset_info)
+        
+        # Verify that the function returns the correct number of seconds
+        assert isinstance(result, int), "calculate_wait_time should return an integer for seconds"
+        assert result == expected_wait_seconds, f"Expected {expected_wait_seconds} seconds wait time (4 hours from 3pm to 7pm), got: {result}"
+        
+        # Verify that datetime.now() was called to get current time
+        mock_datetime.now.assert_called()
+        
+        # Test edge case: reset time is earlier same day (should be next day)
+        # If current time is 8pm and reset time is 7pm, should wait until 7pm next day
+        mock_evening_datetime = chicago_tz.localize(datetime(2025, 1, 15, 20, 0, 0))  # 8:00 PM
+        evening_reset_info = {
+            "reset_time": "7pm",
+            "timezone": "America/Chicago",
+            "format": "natural_language"
+        }
+        
+        # Expected wait time is 23 hours = 82800 seconds (until 7pm next day)
+        expected_next_day_wait = 23 * 3600  # 23 hours in seconds
+        
+        with patch('datetime.datetime') as mock_datetime_evening:
+            mock_datetime_evening.now.return_value = mock_evening_datetime
+            mock_datetime_evening.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            
+            evening_result = calculate_wait_time(evening_reset_info)
+        
+        # When reset time is earlier same day, should calculate time until reset time next day
+        assert evening_result > 20 * 3600, f"Reset time earlier same day should wait until next day (>20 hours), got: {evening_result} seconds"
+        assert evening_result <= 24 * 3600, f"Wait time should not exceed 24 hours, got: {evening_result} seconds"
