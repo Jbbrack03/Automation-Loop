@@ -6,7 +6,7 @@ available to all tests in the tests/ directory.
 """
 
 # Import all fixtures from test_fixtures to make them available globally
-from tests.test_fixtures import (
+from test_fixtures import (
     mock_claude_command,
     mock_get_latest_status,
     test_environment,

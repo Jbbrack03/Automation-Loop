@@ -45,15 +45,15 @@ class TestErrorHandlingConsistency:
         This is the RED phase of TDD - the test must fail first.
         """
         # Import the function to test
-        from automate_dev import run_claude_command
+        from command_executor import run_claude_command
         
         # Test Scenario 1: Subprocess execution failure should raise CommandExecutionError
-        with patch('subprocess.run') as mock_subprocess_run:
+        with patch('command_executor.subprocess.run') as mock_subprocess_run:
             # Configure subprocess to raise an exception
             mock_subprocess_run.side_effect = subprocess.SubprocessError("Command execution failed")
             
             # Mock the logger to capture error logs
-            with patch('automate_dev.LOGGERS') as mock_loggers:
+            with patch('command_executor.LOGGERS') as mock_loggers:
                 mock_error_logger = MagicMock()
                 mock_loggers.__getitem__.return_value = mock_error_logger
                 
@@ -85,7 +85,7 @@ class TestErrorHandlingConsistency:
                 )
         
         # Test Scenario 2: JSON parsing failure should raise JSONParseError
-        with patch('subprocess.run') as mock_subprocess_run:
+        with patch('command_executor.subprocess.run') as mock_subprocess_run:
             with patch('os.path.exists', return_value=True):
                 with patch('os.remove'):
                     # Configure subprocess to return invalid JSON
@@ -96,7 +96,7 @@ class TestErrorHandlingConsistency:
                     mock_subprocess_run.return_value = mock_result
                     
                     # Mock the logger to capture error logs  
-                    with patch('automate_dev.LOGGERS') as mock_loggers:
+                    with patch('command_executor.LOGGERS') as mock_loggers:
                         mock_error_logger = MagicMock()
                         mock_loggers.__getitem__.return_value = mock_error_logger
                         
@@ -129,7 +129,7 @@ class TestErrorHandlingConsistency:
                         )
         
         # Test Scenario 3: Signal file timeout should raise CommandTimeoutError
-        with patch('subprocess.run') as mock_subprocess_run:
+        with patch('command_executor.subprocess.run') as mock_subprocess_run:
             with patch('os.path.exists', return_value=False):  # Signal file never appears
                 with patch('time.time', side_effect=[0, 1000, 2000, 3000]):  # Simulate time progression past timeout
                     # Configure subprocess to return valid result but signal file times out
@@ -140,7 +140,7 @@ class TestErrorHandlingConsistency:
                     mock_subprocess_run.return_value = mock_result
                     
                     # Mock the logger to capture error logs
-                    with patch('automate_dev.LOGGERS') as mock_loggers:
+                    with patch('command_executor.LOGGERS') as mock_loggers:
                         mock_error_logger = MagicMock()
                         mock_loggers.__getitem__.return_value = mock_error_logger
                         
@@ -248,13 +248,13 @@ class TestErrorHandlingConsistency:
         use the error_handler logger or follow consistent message formatting.
         This is the RED phase of TDD - the test must fail first.
         """
-        from automate_dev import run_claude_command
+        from command_executor import run_claude_command
         
         # Test that subprocess errors use error_handler logger
-        with patch('subprocess.run') as mock_subprocess_run:
+        with patch('command_executor.subprocess.run') as mock_subprocess_run:
             mock_subprocess_run.side_effect = subprocess.SubprocessError("Mock subprocess failure")
             
-            with patch('automate_dev.LOGGERS') as mock_loggers:
+            with patch('command_executor.LOGGERS') as mock_loggers:
                 # Set up mock loggers
                 mock_error_logger = MagicMock()
                 mock_command_logger = MagicMock()
@@ -291,7 +291,7 @@ class TestErrorHandlingConsistency:
                 )
         
         # Test that JSON parsing errors use error_handler logger
-        with patch('subprocess.run') as mock_subprocess_run:
+        with patch('command_executor.subprocess.run') as mock_subprocess_run:
             with patch('os.path.exists', return_value=True):
                 with patch('os.remove'):
                     # Mock subprocess to return invalid JSON
@@ -301,7 +301,7 @@ class TestErrorHandlingConsistency:
                     mock_result.stderr = ""
                     mock_subprocess_run.return_value = mock_result
                     
-                    with patch('automate_dev.LOGGERS') as mock_loggers:
+                    with patch('command_executor.LOGGERS') as mock_loggers:
                         mock_error_logger = MagicMock()
                         mock_loggers.__getitem__.return_value = mock_error_logger
                         

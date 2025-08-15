@@ -511,7 +511,7 @@ class TestClaudeCommandExecution:
         This is the RED phase of TDD - the test must fail first.
         """
         # Mock subprocess.run to return a successful result with JSON output
-        with patch('subprocess.run') as mock_subprocess_run:
+        with patch('command_executor.subprocess.run') as mock_subprocess_run:
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = '{"status": "success", "output": "Command completed"}'
@@ -523,11 +523,16 @@ class TestClaudeCommandExecution:
             mock_exists.side_effect = [False, False, True]
             
             # Import the function to test
-            from automate_dev import run_claude_command
+            from command_executor import run_claude_command
             
-            # Call the function
-            test_command = "/continue"
-            result = run_claude_command(test_command)
+            # Mock the LOGGERS to avoid AttributeError
+            with patch('command_executor.LOGGERS') as mock_loggers:
+                mock_logger = MagicMock()
+                mock_loggers.__getitem__.return_value = mock_logger
+                
+                # Call the function
+                test_command = "/continue"
+                result = run_claude_command(test_command)
             
             # Verify subprocess.run was called with correct command array
             mock_subprocess_run.assert_called_once()
@@ -556,7 +561,7 @@ class TestClaudeCommandExecution:
     
     @patch('os.remove')
     @patch('os.path.exists')
-    @patch('subprocess.run')
+    @patch('command_executor.subprocess.run')
     def test_run_claude_command_constructs_correct_command_array(self, mock_subprocess_run, mock_exists, mock_remove):
         """
         Test that run_claude_command constructs the correct Claude CLI command array.
@@ -580,7 +585,7 @@ class TestClaudeCommandExecution:
         mock_exists.return_value = True
         
         # Import the function to test
-        from automate_dev import run_claude_command
+        from command_executor import run_claude_command
         
         # Define test command to execute
         test_command = "/continue"
@@ -616,7 +621,7 @@ class TestClaudeCommandExecution:
     
     @patch('os.remove')
     @patch('os.path.exists')
-    @patch('subprocess.run')
+    @patch('command_executor.subprocess.run')
     def test_run_claude_command_parses_json_output_correctly(self, mock_subprocess_run, mock_exists, mock_remove):
         """
         Test that run_claude_command correctly parses JSON output from Claude CLI.
@@ -654,7 +659,7 @@ class TestClaudeCommandExecution:
         mock_exists.return_value = True
         
         # Import the function to test
-        from automate_dev import run_claude_command
+        from command_executor import run_claude_command
         
         # Call the function
         result = run_claude_command("/validate")
@@ -678,7 +683,7 @@ class TestClaudeCommandExecution:
     
     @patch('os.remove')
     @patch('os.path.exists')
-    @patch('subprocess.run')
+    @patch('command_executor.subprocess.run')
     def test_run_claude_command_handles_claude_cli_errors_gracefully(self, mock_subprocess_run, mock_exists, mock_remove):
         """
         Test that run_claude_command handles Claude CLI errors gracefully.
@@ -701,7 +706,7 @@ class TestClaudeCommandExecution:
         mock_exists.return_value = True
         
         # Import the function to test
-        from automate_dev import run_claude_command
+        from command_executor import run_claude_command
         
         # Call the function with an invalid command
         result = run_claude_command("/invalid-command")
@@ -1419,7 +1424,7 @@ class TestUsageLimitIntegration:
     @patch('time.sleep')
     @patch('automate_dev.calculate_wait_time')
     @patch('automate_dev.parse_usage_limit_error')
-    @patch('subprocess.run')
+    @patch('command_executor.subprocess.run')
     def test_run_claude_command_detects_usage_limit_and_retries_successfully(
             self, mock_subprocess_run, mock_parse_usage_limit, mock_calculate_wait_time, 
             mock_sleep, mock_exists, mock_remove):
@@ -1479,7 +1484,7 @@ class TestUsageLimitIntegration:
         mock_exists.return_value = True
         
         # Import the function to test
-        from automate_dev import run_claude_command
+        from command_executor import run_claude_command
         
         # Call the function - should detect usage limit, wait, and retry
         test_command = "/continue"
