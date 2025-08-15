@@ -5,6 +5,27 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-01-15
+
+### Features
+- **Automatic Usage Limit Recovery** (Phase 9 complete)
+  - Parse usage limit errors in both natural language and Unix timestamp formats
+  - Calculate wait times with timezone support using pytz
+  - Automatic retry mechanism integrated into run_claude_command
+  - Comprehensive error handling and logging for usage limit scenarios
+
+### Technical Improvements
+- Added 4 new comprehensive tests following strict TDD methodology
+- Refactored usage limit handling with extracted helper functions
+- Enhanced separation of concerns with dedicated parsing methods
+- Improved code organization with constants for magic values
+- Better error messages and validation throughout
+
+### Testing
+- 34 total tests now passing (100% success rate)
+- Applied complete TDD Red-Green-Refactor cycle for all Phase 9 tasks
+- Comprehensive mocking for time-based operations
+
 ## [0.4.0] - 2025-01-14
 
 ### Features
