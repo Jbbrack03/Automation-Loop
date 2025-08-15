@@ -4,7 +4,6 @@ This module provides the main orchestrator function that manages prerequisite fi
 validation for the automated development workflow system.
 """
 
-import glob
 import json
 import os
 import subprocess
@@ -51,6 +50,20 @@ MAX_FIX_ATTEMPTS = 3
 # Signal file waiting constants
 SIGNAL_WAIT_SLEEP_INTERVAL = 0.1  # seconds between signal file checks
 SIGNAL_WAIT_TIMEOUT = 30.0  # maximum seconds to wait for signal file
+
+# Status constants
+VALIDATION_PASSED = "validation_passed"
+VALIDATION_FAILED = "validation_failed"
+PROJECT_COMPLETE = "project_complete"
+PROJECT_INCOMPLETE = "project_incomplete"
+
+# Command constants
+CLEAR_CMD = "/clear"
+CONTINUE_CMD = "/continue"
+VALIDATE_CMD = "/validate"
+UPDATE_CMD = "/update"
+CORRECT_CMD = "/correct"
+
 
 
 def check_file_exists(filepath: str) -> bool:
@@ -372,6 +385,34 @@ def _cleanup_status_files(status_files: List[Path], debug: bool = False) -> None
                 print(f"Warning: Failed to delete status file {status_file}: {e}")
 
 
+def execute_command_and_get_status(command: str, debug: bool = False) -> Optional[str]:
+    """Execute a Claude command and return the latest status.
+    
+    This helper function combines the common pattern of running a Claude command
+    followed by checking the latest status from MCP server status files.
+    
+    Args:
+        command: The Claude command to execute (e.g., "/validate", "/update")
+        debug: Whether to enable debug logging for troubleshooting
+        
+    Returns:
+        The status value from the newest status file, or None if no status available
+        
+    Note:
+        This function encapsulates the run_claude_command + get_latest_status pattern
+        that appears frequently in the main orchestration loop.
+    """
+    try:
+        run_claude_command(command, debug=debug)
+        return get_latest_status(debug=debug)
+    except Exception as e:
+        if debug:
+            print(f"Error executing command {command}: {e}")
+        return None
+
+
+
+
 def get_latest_status(debug: bool = False) -> Optional[str]:
     """Get the latest status from MCP server status files.
     
@@ -470,6 +511,51 @@ def main():
     missing_optional = validate_optional_files(optional_files)
     for missing_file in missing_optional:
         print(f"Warning: {missing_file} is missing")
+    
+    # Main orchestration loop
+    tracker = TaskTracker()
+    
+    while True:
+        # Get next task
+        task, all_complete = tracker.get_next_task()
+        
+        if all_complete:
+            # No more tasks - exit successfully  
+            sys.exit(EXIT_SUCCESS)
+            return  # For testing - handle mocked sys.exit
+        
+        # Execute TDD sequence: /clear, /continue, /validate
+        run_claude_command(CLEAR_CMD)
+        run_claude_command(CONTINUE_CMD)
+        run_claude_command(VALIDATE_CMD)
+        
+        # Check validation status
+        validation_status = get_latest_status()
+        
+        # Handle validation result
+        if validation_status == VALIDATION_PASSED:
+            # Validation passed - update the task as complete
+            run_claude_command(UPDATE_CMD)
+            
+            # Check if project is complete
+            project_status = get_latest_status()
+            if project_status == PROJECT_COMPLETE:
+                sys.exit(EXIT_SUCCESS)
+                return  # For testing - handle mocked sys.exit
+            # Continue to next task if project is incomplete
+            continue
+                
+        elif validation_status == VALIDATION_FAILED:
+            # Validation failed - attempt correction if under retry limit
+            if tracker.increment_fix_attempts(task):
+                # Still under retry limit - attempt correction
+                run_claude_command(CORRECT_CMD)
+                # After correction, loop will re-run validation on next iteration
+                continue
+            else:
+                # Max attempts exceeded - skip to next task
+                print(f"Max fix attempts ({MAX_FIX_ATTEMPTS}) exceeded for task '{task}', skipping")
+                continue
 
 
 if __name__ == "__main__":

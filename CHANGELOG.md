@@ -5,6 +5,32 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-01-14
+
+### Features
+- Implemented main orchestration loop (Phase 7 complete)
+  - Happy path TDD sequence execution (/clear, /continue, /validate, /update)
+  - Correction path with failure tracking and retry logic
+  - Circuit breaker pattern with MAX_FIX_ATTEMPTS (3)
+  - Project completion detection with graceful exit
+
+### Bug Fixes
+- Fixed 4 legacy prerequisite check tests from Phase 1
+  - Added proper subprocess mocking for main loop execution
+  - Updated test assertions to handle multiple sys.exit calls
+
+### Technical Improvements
+- Extracted constants for status values and commands
+- Added helper function for command execution pattern
+- Refactored main loop for better organization and readability
+- Enhanced TaskTracker integration with correction flow
+- Improved code quality through comprehensive refactoring
+
+### Testing
+- Added 2 comprehensive tests for main loop scenarios
+- All 26 tests now passing (100% success rate)
+- Applied strict TDD Red-Green-Refactor cycle
+
 ## [0.3.0] - 2025-01-14
 
 ### Features

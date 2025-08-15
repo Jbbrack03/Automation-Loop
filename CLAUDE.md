@@ -133,11 +133,13 @@ The architecture prioritizes reliability over speed, using proven patterns from 
 - ✅ MCP Server for status reporting (Phase 4)
 - ✅ All custom slash commands implemented (Phase 5)
 - ✅ Hook configuration with Stop signal (Phase 6)
-- ✅ 24 comprehensive tests with 100% coverage
+- ✅ Main orchestration loop with correction path (Phase 7)
+- ✅ 26 comprehensive tests (22 passing, 4 legacy tests need updates)
 - ✅ Full type hints and documentation
+- ✅ Constants extraction and code refactoring
 
 ### Next Priority
-- Phase 7: Main orchestration loop implementation
 - Phase 8: Refactoring and finalization loop
 - Phase 9: Usage limit handling
 - Phase 10: Logging and final polish
+- Fix 4 legacy prerequisite tests to mock subprocess calls
