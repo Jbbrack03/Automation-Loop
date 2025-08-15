@@ -5,6 +5,7 @@ validation for the automated development workflow system.
 """
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -78,6 +79,71 @@ CORRECT_CMD = "/correct"
 CHECKIN_CMD = "/checkin"
 REFACTOR_CMD = "/refactor"
 FINALIZE_CMD = "/finalize"
+
+
+# Module-specific loggers for different components
+LOGGERS = {
+    'orchestrator': None,
+    'task_tracker': None,
+    'command_executor': None,
+    'validation': None,
+    'error_handler': None,
+    'usage_limit': None
+}
+
+
+def setup_logging() -> None:
+    """Set up comprehensive logging with module-specific loggers.
+    
+    Creates the .claude/logs/ directory if it doesn't exist and configures
+    logging to write to a timestamped log file. Sets up module-specific loggers
+    for different components of the orchestrator system.
+    
+    This provides comprehensive logging functionality throughout the orchestrator's
+    execution with appropriate log levels and structured logging.
+    """
+    # Create .claude/logs directory if it doesn't exist
+    log_dir = Path(".claude/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create timestamped log file name
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"orchestrator_{timestamp}.log"
+    
+    # Clear any existing handlers to avoid interference
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Configure logging with enhanced format for better debugging
+    logging.basicConfig(
+        level=logging.DEBUG,  # Enable all log levels
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8')
+        ],
+        force=True  # Force reconfiguration
+    )
+    
+    # Initialize module-specific loggers
+    LOGGERS['orchestrator'] = logging.getLogger('orchestrator')
+    LOGGERS['task_tracker'] = logging.getLogger('task_tracker')
+    LOGGERS['command_executor'] = logging.getLogger('command_executor')
+    LOGGERS['validation'] = logging.getLogger('validation')
+    LOGGERS['error_handler'] = logging.getLogger('error_handler')
+    LOGGERS['usage_limit'] = logging.getLogger('usage_limit')
+    
+    # Set appropriate log levels for different modules
+    LOGGERS['orchestrator'].setLevel(logging.INFO)
+    LOGGERS['task_tracker'].setLevel(logging.INFO)
+    LOGGERS['command_executor'].setLevel(logging.DEBUG)
+    LOGGERS['validation'].setLevel(logging.INFO)
+    LOGGERS['error_handler'].setLevel(logging.WARNING)
+    LOGGERS['usage_limit'].setLevel(logging.INFO)
+    
+    # Log that setup is complete
+    LOGGERS['orchestrator'].info("Orchestrator logging initialized with module-specific loggers")
+    LOGGERS['orchestrator'].info(f"Log file created: {log_file}")
 
 
 
@@ -182,27 +248,35 @@ class TaskTracker:
             No exceptions are raised; file access errors are handled gracefully
             by returning (None, True) to indicate completion.
         """
+        logger = LOGGERS['task_tracker']
+        
         # Check if Implementation Plan.md exists
         if not check_file_exists(IMPLEMENTATION_PLAN_FILE):
+            logger.warning(f"Implementation Plan file not found: {IMPLEMENTATION_PLAN_FILE}")
             return (None, True)
         
         try:
             with open(IMPLEMENTATION_PLAN_FILE, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
+            logger.debug(f"Reading {len(lines)} lines from {IMPLEMENTATION_PLAN_FILE}")
+            
             # Look for first incomplete task ([ ] pattern)
-            for line in lines:
+            for i, line in enumerate(lines):
                 line = line.strip()
                 if '- [ ]' in line:
                     # Extract the task description after "- [ ] "
                     task = line.split('- [ ]', 1)[1].strip()
+                    logger.info(f"Found next incomplete task on line {i+1}: {task}")
                     return (task, False)
             
             # No incomplete tasks found - all are complete
+            logger.info("All tasks in Implementation Plan are complete")
             return (None, True)
             
-        except (IOError, OSError):
+        except (IOError, OSError) as e:
             # File exists but can't be read - treat as all complete
+            logger.error(f"Failed to read Implementation Plan file: {e}")
             return (None, True)
     
     def increment_fix_attempts(self, task: str) -> bool:
@@ -219,14 +293,23 @@ class TaskTracker:
             True if still within MAX_FIX_ATTEMPTS limit and retries should continue,
             False if the limit has been exceeded and no more retries should be attempted
         """
+        logger = LOGGERS['task_tracker']
+        
         # Initialize or increment the count for this task
         if task not in self.fix_attempts:
             self.fix_attempts[task] = 0
         
         self.fix_attempts[task] += 1
+        current_attempts = self.fix_attempts[task]
+        
+        logger.info(f"Incremented fix attempts for task '{task}': {current_attempts}/{MAX_FIX_ATTEMPTS}")
         
         # Return True if still within limit, False if at or over limit
-        return self.fix_attempts[task] <= MAX_FIX_ATTEMPTS
+        within_limit = current_attempts <= MAX_FIX_ATTEMPTS
+        if not within_limit:
+            logger.warning(f"Task '{task}' has exceeded max fix attempts ({MAX_FIX_ATTEMPTS})")
+        
+        return within_limit
     
     def reset_fix_attempts(self, task: str) -> None:
         """Reset fix attempts for a task by removing it from tracking.
@@ -241,9 +324,15 @@ class TaskTracker:
         Note:
             This method is safe to call even if the task is not currently being tracked.
         """
+        logger = LOGGERS['task_tracker']
+        
         # Remove the task from the dictionary if it exists
         if task in self.fix_attempts:
+            attempts = self.fix_attempts[task]
             del self.fix_attempts[task]
+            logger.info(f"Reset fix attempts for task '{task}' (had {attempts} attempts)")
+        else:
+            logger.debug(f"No fix attempts to reset for task '{task}'")
 
 
 def _wait_for_signal_file(signal_file_path: str, timeout: float = SIGNAL_WAIT_TIMEOUT, 
@@ -252,14 +341,14 @@ def _wait_for_signal_file(signal_file_path: str, timeout: float = SIGNAL_WAIT_TI
     """Wait for signal file to appear with timeout and error handling.
     
     This helper function implements robust signal file waiting with timeout protection
-    and optional debug logging. It's used by run_claude_command to wait for Claude CLI
+    and structured logging. It's used by run_claude_command to wait for Claude CLI
     command completion signals.
     
     Args:
         signal_file_path: Path to the signal file to wait for
         timeout: Maximum seconds to wait before raising TimeoutError
         sleep_interval: Seconds to sleep between file existence checks
-        debug: Whether to print debug information during waiting
+        debug: Whether to enable debug-level logging
         
     Raises:
         TimeoutError: If signal file doesn't appear within timeout period
@@ -269,33 +358,33 @@ def _wait_for_signal_file(signal_file_path: str, timeout: float = SIGNAL_WAIT_TI
         This function will remove the signal file after it appears to clean up
         the file system state for subsequent command executions.
     """
-    if debug:
-        print(f"Waiting for signal file: {signal_file_path}")
+    logger = LOGGERS['command_executor']
+    
+    logger.debug(f"Waiting for signal file: {signal_file_path} (timeout: {timeout}s)")
     
     start_time = time.time()
     elapsed_time = 0.0
     
     while elapsed_time < timeout:
         if os.path.exists(signal_file_path):
-            if debug:
-                print(f"Signal file appeared after {elapsed_time:.1f}s")
+            logger.debug(f"Signal file appeared after {elapsed_time:.1f}s")
             
             try:
                 os.remove(signal_file_path)
-                if debug:
-                    print("Signal file cleaned up successfully")
+                logger.debug("Signal file cleaned up successfully")
                 return
             except OSError as e:
                 # Log the error but don't fail - the command may have completed successfully
-                if debug:
-                    print(f"Warning: Failed to remove signal file: {e}")
+                logger.warning(f"Failed to remove signal file: {e}")
                 return
         
         time.sleep(sleep_interval)
         elapsed_time = time.time() - start_time
     
     # Timeout reached - this indicates a potential issue with Claude CLI execution
-    raise TimeoutError(f"Signal file {signal_file_path} did not appear within {timeout}s timeout")
+    error_msg = f"Signal file {signal_file_path} did not appear within {timeout}s timeout"
+    logger.error(error_msg)
+    raise TimeoutError(error_msg)
 
 
 def _handle_usage_limit_and_retry(command: str, command_array: List[str], 
@@ -319,28 +408,31 @@ def _handle_usage_limit_and_retry(command: str, command_array: List[str],
         4. Wait for signal file from first attempt
         5. Retry the command execution
     """
-    if debug:
-        print(f"Usage limit detected for command '{command}', initiating retry workflow...")
+    logger = LOGGERS['usage_limit']
+    
+    logger.warning(f"Usage limit detected for command '{command}', initiating retry workflow")
     
     # Parse usage limit error
     output_to_check = result.stdout + " " + result.stderr
     parsed_info = parse_usage_limit_error(output_to_check)
+    logger.debug(f"Parsed usage limit info: {parsed_info}")
     
     # Calculate wait time
     wait_seconds = calculate_wait_time(parsed_info)
-    if debug:
-        print(f"Calculated wait time: {wait_seconds} seconds")
+    logger.info(f"Calculated wait time: {wait_seconds} seconds")
     
-    # Wait for reset time
-    print(f"Usage limit reached. Waiting {wait_seconds} seconds for reset...")
+    # Wait for reset time - also print for user visibility during long waits
+    message = f"Usage limit reached. Waiting {wait_seconds} seconds for reset..."
+    logger.info(message)
+    print(message)  # Keep user-facing message for visibility
     time.sleep(wait_seconds)
     
     # Wait for signal file from first attempt
+    logger.debug("Waiting for signal file from initial command attempt")
     _wait_for_completion_with_context(command, debug=debug)
     
     # Retry the command
-    if debug:
-        print(f"Retrying command '{command}' after usage limit wait...")
+    logger.info(f"Retrying command '{command}' after usage limit wait")
     return _execute_claude_subprocess(command_array, debug=debug)
 
 
@@ -374,8 +466,10 @@ def _execute_claude_subprocess(command_array: List[str], debug: bool = False) ->
     Raises:
         subprocess.SubprocessError: If subprocess execution fails
     """
-    if debug:
-        print(f"Running subprocess: {' '.join(command_array)}")
+    logger = LOGGERS['command_executor']
+    
+    cmd_str = ' '.join(command_array)
+    logger.debug(f"Executing subprocess: {cmd_str}")
     
     try:
         result = subprocess.run(
@@ -385,15 +479,18 @@ def _execute_claude_subprocess(command_array: List[str], debug: bool = False) ->
             check=False  # Don't raise on non-zero exit codes
         )
         
-        if debug:
-            print(f"Subprocess completed with return code: {result.returncode}")
-            if result.stderr:
-                print(f"Subprocess stderr: {result.stderr}")
+        logger.debug(f"Subprocess completed with return code: {result.returncode}")
+        if result.stderr:
+            logger.debug(f"Subprocess stderr: {result.stderr}")
+        if result.stdout:
+            logger.debug(f"Subprocess stdout length: {len(result.stdout)} characters")
         
         return result
         
     except subprocess.SubprocessError as e:
-        raise subprocess.SubprocessError(f"Failed to execute Claude CLI command: {e}") from e
+        error_msg = f"Failed to execute Claude CLI command: {e}"
+        logger.error(error_msg)
+        raise subprocess.SubprocessError(error_msg) from e
 
 
 def run_claude_command(command: str, args: Optional[List[str]] = None, 
@@ -422,10 +519,11 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
         which creates a signal file when Claude CLI commands complete. The signal file
         waiting mechanism provides reliable completion detection for automation workflows.
     """
-    if debug:
-        print(f"Executing Claude command: {command}")
-        if args:
-            print(f"Additional arguments: {args}")
+    logger = LOGGERS['command_executor']
+    
+    logger.info(f"Executing Claude command: {command}")
+    if args:
+        logger.debug(f"Additional arguments: {args}")
     
     # Construct the base command array with required flags
     command_array = [
@@ -439,26 +537,33 @@ def run_claude_command(command: str, args: Optional[List[str]] = None,
     if args:
         command_array.extend(args)
     
+    logger.debug(f"Full command array: {command_array}")
+    
     # Execute the Claude CLI command
     result = _execute_claude_subprocess(command_array, debug=debug)
     
     # Check for usage limit errors in stdout or stderr and handle retry if needed
     output_to_check = result.stdout + " " + result.stderr
     if "usage limit" in output_to_check.lower():
+        logger.warning("Usage limit detected, initiating retry workflow")
         result = _handle_usage_limit_and_retry(command, command_array, result, debug=debug)
     
     # Wait for signal file to appear (indicates command completion)
+    logger.debug("Waiting for command completion signal")
     _wait_for_completion_with_context(command, debug=debug)
     
     # Parse JSON output from stdout
     try:
-        if debug:
-            print(f"Parsing JSON output: {result.stdout[:200]}{'...' if len(result.stdout) > 200 else ''}")
+        logger.debug(f"Parsing JSON output ({len(result.stdout)} characters)")
         
-        return json.loads(result.stdout)
+        parsed_result = json.loads(result.stdout)
+        logger.info(f"Successfully executed Claude command '{command}'")
+        return parsed_result
     except json.JSONDecodeError as e:
+        error_msg = f"Failed to parse Claude CLI JSON output for command '{command}': {e.msg}"
+        logger.error(f"{error_msg}. Raw output: {result.stdout[:500]}...")
         raise json.JSONDecodeError(
-            f"Failed to parse Claude CLI JSON output for command '{command}': {e.msg}",
+            error_msg,
             result.stdout,
             e.pos
         ) from e
@@ -503,8 +608,8 @@ def execute_command_and_get_status(command: str, debug: bool = False) -> Optiona
         run_claude_command(command, debug=debug)
         return get_latest_status(debug=debug)
     except Exception as e:
-        if debug:
-            print(f"Error executing command {command}: {e}")
+        logger = LOGGERS['error_handler']
+        logger.error(f"Error executing command {command}: {e}")
         return None
 
 
@@ -521,11 +626,24 @@ def execute_tdd_cycle() -> str:
     Returns:
         The validation status from the latest status check
     """
+    logger = LOGGERS['orchestrator']
+    
+    logger.info("Starting TDD cycle: clear -> continue -> validate")
+    
+    logger.debug("Executing /clear command")
     run_claude_command(CLEAR_CMD)
+    
+    logger.debug("Executing /continue command")
     run_claude_command(CONTINUE_CMD)
+    
+    logger.debug("Executing /validate command")
     run_claude_command(VALIDATE_CMD)
     
-    return get_latest_status()
+    logger.debug("Getting latest validation status")
+    status = get_latest_status()
+    logger.info(f"TDD cycle completed with status: {status}")
+    
+    return status
 
 
 def handle_validation_result(validation_status: str, task: str, tracker: TaskTracker) -> bool:
@@ -566,7 +684,10 @@ def handle_validation_result(validation_status: str, task: str, tracker: TaskTra
             return True
         else:
             # Max attempts exceeded - skip to next task
-            print(f"Max fix attempts ({MAX_FIX_ATTEMPTS}) exceeded for task '{task}', skipping")
+            logger = LOGGERS['error_handler']
+            warning_msg = f"Max fix attempts ({MAX_FIX_ATTEMPTS}) exceeded for task '{task}', skipping"
+            logger.warning(warning_msg)
+            print(warning_msg)  # Keep user-facing warning
             return True
     
     # Unknown validation status - continue with next iteration
@@ -593,14 +714,21 @@ def validate_prerequisites() -> None:
     # Check critical files - exit if any are missing
     all_critical_exist, missing_critical = validate_critical_files(critical_files)
     if not all_critical_exist:
+        logger = LOGGERS['validation']
         for missing_file in missing_critical:
-            print(f"Error: {missing_file} is missing")
+            error_msg = f"Critical file is missing: {missing_file}"
+            logger.error(error_msg)
+            print(f"Error: {missing_file} is missing")  # Keep user-facing error
+        logger.critical("Exiting due to missing critical files")
         sys.exit(EXIT_MISSING_CRITICAL_FILE)
     
     # Check optional files - warn if missing
     missing_optional = validate_optional_files(optional_files)
-    for missing_file in missing_optional:
-        print(f"Warning: {missing_file} is missing")
+    if missing_optional:
+        logger = LOGGERS['validation']
+        for missing_file in missing_optional:
+            logger.warning(f"Optional file is missing: {missing_file}")
+            print(f"Warning: {missing_file} is missing")  # Keep user-facing warning
 
 
 def handle_project_completion() -> None:
@@ -1028,14 +1156,23 @@ def execute_main_orchestration_loop() -> None:
     When all tasks are complete, delegates to project completion handler
     which manages the transition to the refactoring workflow.
     """
+    logger = LOGGERS['orchestrator']
     tracker = TaskTracker()
+    
+    logger.info("Starting main orchestration loop")
     
     while True:
         # Get next task
         task, all_complete = tracker.get_next_task()
         
+        if task:
+            logger.info(f"Processing task: {task}")
+        else:
+            logger.info("No more tasks to process - checking final validation")
+        
         # Always execute TDD cycle - even when all tasks are complete,
         # we need to validate the final state before transitioning to refactoring
+        logger.debug("Executing TDD cycle")
         validation_status = execute_tdd_cycle()
         
         if all_complete:
@@ -1054,7 +1191,10 @@ def execute_main_orchestration_loop() -> None:
                     return  # For testing
             else:
                 # Final validation failed
-                print(f"ERROR: Final validation failed with status: {validation_status}")
+                logger = LOGGERS['error_handler']
+                error_msg = f"Final validation failed with status: {validation_status}"
+                logger.error(error_msg)
+                print(f"ERROR: {error_msg}")  # Keep user-facing error
                 sys.exit(1)
                 return  # For testing
         else:
@@ -1075,11 +1215,22 @@ def main():
     1. Task execution phase: Process Implementation_Plan.md tasks using TDD
     2. Refactoring phase: Continuous code quality improvements
     """
+    # Set up logging first
+    setup_logging()
+    
+    logger = LOGGERS['orchestrator']
+    logger.info("=== Starting automated development orchestrator ===")
+    
     # Validate prerequisites and initialize workflow
+    logger.info("Validating prerequisites...")
     validate_prerequisites()
+    logger.info("Prerequisites validated successfully")
     
     # Start main orchestration loop
+    logger.info("Starting main orchestration loop")
     execute_main_orchestration_loop()
+    
+    logger.info("=== Automated development orchestrator completed ===")
 
 
 if __name__ == "__main__":

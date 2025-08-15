@@ -1916,3 +1916,128 @@ class TestUsageLimitParsing:
         # When reset time is earlier same day, should calculate time until reset time next day
         assert evening_result > 20 * 3600, f"Reset time earlier same day should wait until next day (>20 hours), got: {evening_result} seconds"
         assert evening_result <= 24 * 3600, f"Wait time should not exceed 24 hours, got: {evening_result} seconds"
+
+
+class TestLogging:
+    """Test suite for logging functionality in the orchestrator."""
+    
+    @patch('automate_dev.get_latest_status')
+    @patch('automate_dev.run_claude_command')
+    def test_orchestrator_creates_log_file_in_claude_logs_directory(self, mock_run_claude_command, mock_get_latest_status, tmp_path, monkeypatch):
+        """
+        Test that the orchestrator creates a log file in .claude/logs/ directory after running.
+        
+        This test verifies that the logging functionality has been implemented:
+        1. The orchestrator should set up logging when main() is called
+        2. A log file should be created in the .claude/logs/ directory
+        3. The log file should contain expected log entries from orchestrator execution
+        4. The log file should have appropriate log levels and formatting
+        
+        Given a working directory with all required files,
+        When the main orchestrator function is executed,
+        Then a log file should be created in .claude/logs/ directory,
+        And the log file should contain entries documenting the orchestrator's execution.
+        
+        This test will initially fail because logging functionality doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory
+        monkeypatch.chdir(tmp_path)
+        
+        # Create Implementation Plan.md with all tasks complete to ensure quick execution
+        implementation_plan = tmp_path / "Implementation Plan.md"
+        implementation_plan_content = """# Implementation Plan
+
+## Phase 1: Setup
+- [X] All tasks complete for quick test execution
+"""
+        implementation_plan.write_text(implementation_plan_content, encoding="utf-8")
+        
+        # Create .claude directory structure
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        
+        # Create the logs directory that should be used for log files
+        logs_dir = claude_dir / "logs"
+        logs_dir.mkdir()
+        
+        # Create other required files to avoid prerequisite errors
+        prd_file = tmp_path / "PRD.md"
+        prd_file.write_text("# Product Requirements Document", encoding="utf-8")
+        
+        claude_file = tmp_path / "CLAUDE.md"
+        claude_file.write_text("# CLAUDE.md\n\nProject instructions for Claude Code.", encoding="utf-8")
+        
+        # Mock run_claude_command to return successful results quickly
+        mock_run_claude_command.return_value = {"status": "success", "output": "Command completed"}
+        
+        # Mock get_latest_status to simulate all tasks complete for quick execution
+        mock_get_latest_status.side_effect = [
+            "validation_passed",     # After /validate in TDD cycle
+            "project_complete",      # After /update - project complete
+            "project_complete",      # Check in handle_project_completion
+            "checkin_complete",      # After /checkin
+            "no_refactoring_needed"  # After /refactor - exit immediately
+        ]
+        
+        # Import the main function to test
+        from automate_dev import main
+        
+        # Mock sys.exit to prevent actual exit and capture when it's called
+        with patch('sys.exit') as mock_exit:
+            # Call main function - it should set up logging and create log file
+            main()
+            
+            # Verify that sys.exit was called (indicating successful completion)
+            mock_exit.assert_called_once_with(0)
+        
+        # Verify that the .claude/logs directory still exists
+        assert logs_dir.exists(), f".claude/logs directory should exist at {logs_dir}"
+        assert logs_dir.is_dir(), ".claude/logs should be a directory"
+        
+        # Verify that a log file was created in the .claude/logs/ directory
+        log_files = list(logs_dir.glob("*.log"))
+        assert len(log_files) > 0, f"Expected at least one log file in .claude/logs/, but found: {[f.name for f in log_files]}"
+        
+        # Get the most recent log file (in case multiple exist)
+        log_file = max(log_files, key=lambda f: f.stat().st_mtime)
+        
+        # Verify that the log file is readable and not empty
+        assert log_file.is_file(), f"Log file should be a regular file: {log_file}"
+        assert log_file.stat().st_size > 0, f"Log file should not be empty: {log_file}"
+        
+        # Read and verify log file contents
+        log_content = log_file.read_text(encoding="utf-8")
+        
+        # Verify that the log file contains expected log entries
+        assert len(log_content.strip()) > 0, f"Log file should contain content, got: {repr(log_content[:100])}"
+        
+        # Verify that the log contains entries related to orchestrator execution
+        # Look for key orchestrator activities in the log
+        expected_log_entries = [
+            "main",  # Should log when main function starts
+            "orchestrator",  # Should contain references to orchestrator operations
+        ]
+        
+        log_content_lower = log_content.lower()
+        found_entries = []
+        for expected_entry in expected_log_entries:
+            if expected_entry.lower() in log_content_lower:
+                found_entries.append(expected_entry)
+        
+        assert len(found_entries) > 0, f"Expected log file to contain orchestrator-related entries like {expected_log_entries}, but log content was: {repr(log_content[:500])}"
+        
+        # Verify that log entries have proper formatting (should include timestamp and log level)
+        log_lines = [line for line in log_content.split('\n') if line.strip()]
+        assert len(log_lines) > 0, f"Expected at least one non-empty log line, got: {log_lines}"
+        
+        # Check that at least one log line has expected formatting elements
+        # Standard log format typically includes timestamp and level
+        has_formatted_entry = False
+        for line in log_lines:
+            # Look for common log formatting patterns: timestamp, log level, etc.
+            if any(pattern in line for pattern in ['INFO', 'DEBUG', 'ERROR', 'WARN', '2025', ':']):
+                has_formatted_entry = True
+                break
+        
+        assert has_formatted_entry, f"Expected at least one log entry with proper formatting (timestamp/level), but log lines were: {log_lines[:3]}"
