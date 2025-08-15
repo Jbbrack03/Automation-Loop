@@ -57,12 +57,21 @@ VALIDATION_FAILED = "validation_failed"
 PROJECT_COMPLETE = "project_complete"
 PROJECT_INCOMPLETE = "project_incomplete"
 
+# Refactoring status constants
+CHECKIN_COMPLETE = "checkin_complete"
+REFACTORING_NEEDED = "refactoring_needed"
+NO_REFACTORING_NEEDED = "no_refactoring_needed"
+FINALIZATION_COMPLETE = "finalization_complete"
+
 # Command constants
 CLEAR_CMD = "/clear"
 CONTINUE_CMD = "/continue"
 VALIDATE_CMD = "/validate"
 UPDATE_CMD = "/update"
 CORRECT_CMD = "/correct"
+CHECKIN_CMD = "/checkin"
+REFACTOR_CMD = "/refactor"
+FINALIZE_CMD = "/finalize"
 
 
 
@@ -413,6 +422,156 @@ def execute_command_and_get_status(command: str, debug: bool = False) -> Optiona
 
 
 
+def execute_tdd_cycle() -> str:
+    """Execute the TDD cycle: clear, continue, validate.
+    
+    Runs the core Test-Driven Development sequence of commands:
+    1. Clear the session state
+    2. Continue with implementation
+    3. Validate the current state
+    
+    Returns:
+        The validation status from the latest status check
+    """
+    run_claude_command(CLEAR_CMD)
+    run_claude_command(CONTINUE_CMD)
+    run_claude_command(VALIDATE_CMD)
+    
+    return get_latest_status()
+
+
+def handle_validation_result(validation_status: str, task: str, tracker: TaskTracker) -> bool:
+    """Handle the result of validation and determine next action.
+    
+    Processes validation results and executes appropriate follow-up actions:
+    - For VALIDATION_PASSED: Updates task and checks project completion
+    - For VALIDATION_FAILED: Attempts correction within retry limits
+    
+    Args:
+        validation_status: The status returned from validation
+        task: The current task being processed
+        tracker: TaskTracker instance for managing failure counts
+        
+    Returns:
+        True if the main loop should continue, False if it should exit
+        
+    Raises:
+        SystemExit: When project is complete (EXIT_SUCCESS)
+    """
+    if validation_status == VALIDATION_PASSED:
+        # Validation passed - update the task as complete
+        run_claude_command(UPDATE_CMD)
+        
+        # Check if project is complete
+        project_status = get_latest_status()
+        if project_status == PROJECT_COMPLETE:
+            handle_project_completion()
+        # Continue to next task if project is incomplete
+        return True
+            
+    elif validation_status == VALIDATION_FAILED:
+        # Validation failed - attempt correction if under retry limit
+        if tracker.increment_fix_attempts(task):
+            # Still under retry limit - attempt correction
+            run_claude_command(CORRECT_CMD)
+            # After correction, loop will re-run validation on next iteration
+            return True
+        else:
+            # Max attempts exceeded - skip to next task
+            print(f"Max fix attempts ({MAX_FIX_ATTEMPTS}) exceeded for task '{task}', skipping")
+            return True
+    
+    # Unknown validation status - continue with next iteration
+    return True
+
+
+def validate_prerequisites() -> None:
+    """Validate prerequisite files and settings for the workflow.
+    
+    Checks for critical and optional files, ensures settings file exists,
+    and reports any missing files. Critical files are required for the
+    workflow to proceed, while optional files generate warnings.
+    
+    Raises:
+        SystemExit: If any critical files are missing (EXIT_MISSING_CRITICAL_FILE)
+    """
+    # Ensure settings file exists
+    ensure_settings_file()
+    
+    # Define critical and optional files
+    critical_files = [IMPLEMENTATION_PLAN_FILE]
+    optional_files = [PRD_FILE, CLAUDE_FILE]
+    
+    # Check critical files - exit if any are missing
+    all_critical_exist, missing_critical = validate_critical_files(critical_files)
+    if not all_critical_exist:
+        for missing_file in missing_critical:
+            print(f"Error: {missing_file} is missing")
+        sys.exit(EXIT_MISSING_CRITICAL_FILE)
+    
+    # Check optional files - warn if missing
+    missing_optional = validate_optional_files(optional_files)
+    for missing_file in missing_optional:
+        print(f"Warning: {missing_file} is missing")
+
+
+def handle_project_completion() -> None:
+    """Handle project completion by checking status and entering appropriate workflow.
+    
+    Checks the current project status and either:
+    - Enters the refactoring loop if project is complete
+    - Exits successfully if project is not complete
+    
+    This function centralizes the project completion logic to reduce duplication
+    across the orchestration workflow.
+    
+    Raises:
+        SystemExit: Always exits with EXIT_SUCCESS
+    """
+    project_status = get_latest_status()
+    if project_status == PROJECT_COMPLETE:
+        # Enter refactoring loop
+        execute_refactoring_loop()
+    else:
+        # Project not complete for some reason, exit
+        sys.exit(EXIT_SUCCESS)
+        return  # For testing - handle mocked sys.exit
+
+
+def execute_refactoring_loop() -> None:
+    """Execute the refactoring loop until no more refactoring is needed.
+    
+    This function implements the continuous refactoring workflow:
+    1. Perform checkin to assess current state
+    2. Run refactor analysis to identify improvement opportunities
+    3. If refactoring is needed, execute finalization and repeat
+    4. If no refactoring is needed, exit the workflow successfully
+    
+    The loop continues until the refactor command indicates that no further
+    improvements are necessary, at which point the workflow terminates.
+    
+    Raises:
+        SystemExit: When the refactoring workflow is complete (EXIT_SUCCESS)
+    """
+    while True:
+        # Start with checkin to assess current state
+        checkin_status = execute_command_and_get_status(CHECKIN_CMD)
+        
+        # Run refactor analysis to identify improvement opportunities
+        refactor_status = execute_command_and_get_status(REFACTOR_CMD)
+        
+        # If no refactoring needed, workflow is complete
+        if refactor_status == NO_REFACTORING_NEEDED:
+            sys.exit(EXIT_SUCCESS)
+            return  # For testing - handle mocked sys.exit
+        
+        # If refactoring needed, execute finalization
+        if refactor_status == REFACTORING_NEEDED:
+            finalize_status = execute_command_and_get_status(FINALIZE_CMD)
+            # Continue loop for next refactoring cycle
+            continue
+
+
 def get_latest_status(debug: bool = False) -> Optional[str]:
     """Get the latest status from MCP server status files.
     
@@ -491,71 +650,71 @@ def get_latest_status(debug: bool = False) -> Optional[str]:
     return status
 
 
-def main():
-    """Main orchestrator function with prerequisite file checks."""
-    # Ensure settings file exists
-    ensure_settings_file()
+
+def execute_main_orchestration_loop() -> None:
+    """Execute the main task orchestration loop.
     
-    # Define critical and optional files
-    critical_files = [IMPLEMENTATION_PLAN_FILE]
-    optional_files = [PRD_FILE, CLAUDE_FILE]
+    Continuously processes tasks from Implementation_Plan.md using the TDD workflow:
+    1. Get next incomplete task
+    2. Execute TDD cycle (clear, continue, validate)
+    3. Handle validation results and retry logic
+    4. Continue until all tasks are complete
     
-    # Check critical files - exit if any are missing
-    all_critical_exist, missing_critical = validate_critical_files(critical_files)
-    if not all_critical_exist:
-        for missing_file in missing_critical:
-            print(f"Error: {missing_file} is missing")
-        sys.exit(EXIT_MISSING_CRITICAL_FILE)
-    
-    # Check optional files - warn if missing
-    missing_optional = validate_optional_files(optional_files)
-    for missing_file in missing_optional:
-        print(f"Warning: {missing_file} is missing")
-    
-    # Main orchestration loop
+    When all tasks are complete, delegates to project completion handler
+    which manages the transition to the refactoring workflow.
+    """
     tracker = TaskTracker()
     
     while True:
         # Get next task
         task, all_complete = tracker.get_next_task()
         
+        # Always execute TDD cycle - even when all tasks are complete,
+        # we need to validate the final state before transitioning to refactoring
+        validation_status = execute_tdd_cycle()
+        
         if all_complete:
-            # No more tasks - exit successfully  
-            sys.exit(EXIT_SUCCESS)
-            return  # For testing - handle mocked sys.exit
-        
-        # Execute TDD sequence: /clear, /continue, /validate
-        run_claude_command(CLEAR_CMD)
-        run_claude_command(CONTINUE_CMD)
-        run_claude_command(VALIDATE_CMD)
-        
-        # Check validation status
-        validation_status = get_latest_status()
-        
-        # Handle validation result
-        if validation_status == VALIDATION_PASSED:
-            # Validation passed - update the task as complete
-            run_claude_command(UPDATE_CMD)
-            
-            # Check if project is complete
-            project_status = get_latest_status()
-            if project_status == PROJECT_COMPLETE:
-                sys.exit(EXIT_SUCCESS)
-                return  # For testing - handle mocked sys.exit
-            # Continue to next task if project is incomplete
-            continue
-                
-        elif validation_status == VALIDATION_FAILED:
-            # Validation failed - attempt correction if under retry limit
-            if tracker.increment_fix_attempts(task):
-                # Still under retry limit - attempt correction
-                run_claude_command(CORRECT_CMD)
-                # After correction, loop will re-run validation on next iteration
-                continue
+            # All tasks complete - handle final validation and potential refactoring
+            if validation_status == VALIDATION_PASSED:
+                # Update to mark project complete
+                run_claude_command(UPDATE_CMD)
+                update_status = get_latest_status()
+                if update_status == PROJECT_COMPLETE:
+                    # Enter refactoring workflow
+                    handle_project_completion()
+                    return  # For testing - refactoring loop will exit
+                else:
+                    # Exit if not marked as complete
+                    sys.exit(EXIT_SUCCESS)
+                    return  # For testing
             else:
-                # Max attempts exceeded - skip to next task
-                print(f"Max fix attempts ({MAX_FIX_ATTEMPTS}) exceeded for task '{task}', skipping")
+                # Final validation failed
+                print(f"ERROR: Final validation failed with status: {validation_status}")
+                sys.exit(1)
+                return  # For testing
+        else:
+            # Normal task processing
+            should_continue = handle_validation_result(validation_status, task, tracker)
+            if should_continue:
                 continue
+
+
+def main():
+    """Main orchestrator function for the automated development workflow.
+    
+    Entry point for the automated development system. Validates prerequisites
+    and launches the main orchestration loop for task processing and workflow
+    management.
+    
+    The workflow progresses through two main phases:
+    1. Task execution phase: Process Implementation_Plan.md tasks using TDD
+    2. Refactoring phase: Continuous code quality improvements
+    """
+    # Validate prerequisites and initialize workflow
+    validate_prerequisites()
+    
+    # Start main orchestration loop
+    execute_main_orchestration_loop()
 
 
 if __name__ == "__main__":
