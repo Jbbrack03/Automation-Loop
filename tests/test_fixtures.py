@@ -299,17 +299,26 @@ def get_main_loop_status_sequence():
     Returns:
         List of status values to be used with mock_get_latest_status.side_effect
     """
+    # With the new _command_executor_wrapper, get_latest_status is only called for
+    # commands that need status (/validate, /update, /checkin, /refactor)
+    # /clear and /continue don't call get_latest_status anymore
     return [
-        "validation_passed",     # After /validate for first task
-        "project_incomplete",    # After /update for first task
-        "validation_passed",     # After /validate for second task  
-        "project_incomplete",    # After /update for second task
-        "validation_passed",     # After /validate when all tasks complete
-        "project_complete",      # After /update - marks project complete
+        # First task TDD cycle (2 status calls: validate, update)
+        "validation_passed",     # /validate via execute_command_and_get_status
+        "project_incomplete",    # /update via execute_command_and_get_status
+        
+        # Second task TDD cycle  
+        "validation_passed",     # /validate
+        "project_incomplete",    # /update
+        
+        # Third task TDD cycle
+        "validation_passed",     # /validate
+        "project_complete",      # /update - all tasks complete
+        
+        # Extra values for handle_project_completion and refactoring loop
         "project_complete",      # Check in handle_project_completion
-        # Refactoring loop starts but exits immediately
-        "checkin_complete",      # After /checkin
-        "no_refactoring_needed"  # After /refactor - exits
+        "checkin_complete",      # /checkin in refactoring loop
+        "no_refactoring_needed", # /refactor - causes exit
     ]
 
 

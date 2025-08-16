@@ -5,6 +5,44 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-08-16
+
+### Features
+- **Structured JSON Logging Implementation** (Phase 12 Task 5 complete)
+  - Implemented JSON-formatted logging using `python-json-logger`
+  - Added contextual information support in log messages
+  - Created comprehensive logging configuration in `config.py`
+  - Added `PerformanceTimer` context manager for performance measurement
+  - Implemented `log_performance_metrics()` function for operation timing
+
+- **Log Rotation System**
+  - Added `RotatingFileHandler` support with configurable size limits
+  - Implemented automatic log file rotation (10MB max, 5 backups by default)
+  - Made rotation behavior configurable via `LOG_ROTATION_ENABLED` flag
+  - Added dynamic configuration loading to respect runtime settings
+
+- **Enhanced Logging Architecture**
+  - Extracted logging setup into modular helper functions
+  - Created specialized functions: `_create_log_directory()`, `_generate_log_filename()`, `_create_json_formatter()`
+  - Improved separation of concerns with `_configure_root_logger()` and `_initialize_module_loggers()`
+  - Added performance monitoring capabilities with configurable thresholds
+
+### Improved
+- **Better Maintainability**
+  - All logging configuration centralized in `config.py`
+  - Cleaner code organization with extracted helper functions
+  - Enhanced testability with modular design
+  - More configurable system with toggle flags for features
+
+### Dependencies
+- Added `python-json-logger` for structured JSON logging support
+
+### Testing
+- Added comprehensive tests for JSON logging format validation
+- Created tests for log rotation behavior and configuration
+- Verified dynamic configuration loading works correctly
+- All 73 tests passing with new logging system
+
 ## [1.3.2] - 2025-08-15
 
 ### Features

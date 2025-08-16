@@ -116,6 +116,44 @@ NOON_HOUR_12_FORMAT = 12            # Hour value representing noon in 12-hour fo
 # =============================================================================
 # LOGGING CONFIGURATION
 # =============================================================================
+
+# Logging directory and file configuration
+LOG_DIRECTORY = ".claude/logs"
+LOG_FILE_PREFIX = "orchestrator"
+LOG_FILE_EXTENSION = ".log"
+TIMESTAMP_FORMAT = "%Y%m%d_%H%M%S"
+
+# JSON formatter configuration
+JSON_LOG_FORMAT = '%(asctime)s %(levelname)s %(name)s %(message)s'
+JSON_FIELD_RENAMES = {
+    'levelname': 'level',
+    'name': 'logger_name',
+    'asctime': 'timestamp'
+}
+
+# Log levels for different modules
+LOG_LEVELS = {
+    'orchestrator': 'INFO',
+    'task_tracker': 'INFO',
+    'command_executor': 'DEBUG',
+    'validation': 'INFO',
+    'error_handler': 'WARNING',
+    'usage_limit': 'INFO'
+}
+
+# Root logger configuration
+ROOT_LOG_LEVEL = 'DEBUG'
+LOG_FILE_ENCODING = 'utf-8'
+
+# Log rotation configuration
+MAX_LOG_FILE_SIZE = 10 * 1024 * 1024  # 10 MB in bytes
+BACKUP_COUNT = 5  # Keep 5 backup files
+LOG_ROTATION_ENABLED = True
+
+# Performance metrics configuration
+PERFORMANCE_LOGGING_ENABLED = True
+PERFORMANCE_LOG_THRESHOLD_MS = 1000  # Log operations taking longer than 1 second
+
 # Module-specific loggers for different components
 LOGGERS = {
     'orchestrator': None,

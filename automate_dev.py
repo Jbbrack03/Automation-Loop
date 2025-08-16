@@ -26,7 +26,11 @@ from config import (
     CHECKIN_CMD, REFACTOR_CMD, FINALIZE_CMD,
     DEFAULT_SETTINGS_CONFIG, DEFAULT_SETTINGS_JSON,
     HOURS_12_CLOCK_CONVERSION, MIDNIGHT_HOUR_12_FORMAT, NOON_HOUR_12_FORMAT,
-    USAGE_LIMIT_TIME_PATTERN, LOGGERS
+    USAGE_LIMIT_TIME_PATTERN, LOGGERS,
+    LOG_DIRECTORY, LOG_FILE_PREFIX, LOG_FILE_EXTENSION, TIMESTAMP_FORMAT,
+    JSON_LOG_FORMAT, JSON_FIELD_RENAMES, ROOT_LOG_LEVEL, LOG_FILE_ENCODING,
+    LOG_LEVELS, MAX_LOG_FILE_SIZE, BACKUP_COUNT, LOG_ROTATION_ENABLED,
+    PERFORMANCE_LOGGING_ENABLED, PERFORMANCE_LOG_THRESHOLD_MS
 )
 from task_tracker import TaskTracker
 from command_executor import run_claude_command, execute_command_and_get_status
@@ -231,6 +235,200 @@ class ValidationError(OrchestratorError):
         super().__init__(_format_error_message("VALIDATION", message, command))
 
 
+def _create_log_directory() -> Path:
+    """Create and return the logging directory path.
+    
+    Returns:
+        Path: The created logging directory path
+    """
+    log_dir = Path(LOG_DIRECTORY)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+def _generate_log_filename() -> Path:
+    """Generate a timestamped log filename.
+    
+    Returns:
+        Path: Complete path to the log file with timestamp
+    """
+    log_dir = _create_log_directory()
+    timestamp = datetime.datetime.now().strftime(TIMESTAMP_FORMAT)
+    return log_dir / f"{LOG_FILE_PREFIX}_{timestamp}{LOG_FILE_EXTENSION}"
+
+
+def _create_json_formatter():
+    """Create and configure the JSON formatter for structured logging.
+    
+    Returns:
+        JsonFormatter: Configured JSON formatter with field renaming
+    """
+    from pythonjsonlogger import json as jsonlogger
+    
+    return jsonlogger.JsonFormatter(
+        JSON_LOG_FORMAT,
+        rename_fields=JSON_FIELD_RENAMES
+    )
+
+
+def _clear_existing_handlers() -> None:
+    """Clear any existing handlers from the root logger to avoid interference."""
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+
+def _configure_root_logger(log_file: Path) -> None:
+    """Configure the root logger with file handler and JSON formatting.
+    
+    Supports both regular file logging and rotating file logging based on
+    configuration. When log rotation is enabled, files are rotated when
+    they exceed the maximum size limit.
+    
+    Args:
+        log_file: Path to the log file
+    """
+    import config
+    from logging.handlers import RotatingFileHandler
+    
+    root_logger = logging.getLogger()
+    
+    # Create appropriate file handler based on rotation configuration
+    if config.LOG_ROTATION_ENABLED:
+        file_handler = RotatingFileHandler(
+            log_file, 
+            maxBytes=config.MAX_LOG_FILE_SIZE,
+            backupCount=config.BACKUP_COUNT,
+            encoding=config.LOG_FILE_ENCODING
+        )
+    else:
+        file_handler = logging.FileHandler(log_file, encoding=config.LOG_FILE_ENCODING)
+    
+    file_handler.setFormatter(_create_json_formatter())
+    
+    # Configure root logger
+    root_logger.setLevel(getattr(logging, config.ROOT_LOG_LEVEL))
+    root_logger.addHandler(file_handler)
+
+
+def _initialize_module_loggers() -> None:
+    """Initialize module-specific loggers with appropriate log levels."""
+    # Initialize module-specific loggers
+    for module_name in LOGGERS.keys():
+        LOGGERS[module_name] = logging.getLogger(module_name)
+        
+        # Set appropriate log level for each module
+        log_level_name = LOG_LEVELS.get(module_name, 'INFO')
+        log_level = getattr(logging, log_level_name)
+        LOGGERS[module_name].setLevel(log_level)
+
+
+def _log_initialization_complete(log_file: Path) -> None:
+    """Log that the logging system initialization is complete.
+    
+    Args:
+        log_file: Path to the log file that was created
+    """
+    LOGGERS['orchestrator'].info(
+        "Orchestrator logging initialized with module-specific loggers",
+        extra={"component": "logging", "operation": "initialization"}
+    )
+    LOGGERS['orchestrator'].info(
+        f"Log file created: {log_file}",
+        extra={"component": "logging", "log_file": str(log_file)}
+    )
+
+
+def log_performance_metrics(operation_name: str, duration_ms: float, 
+                          logger_name: str = 'orchestrator', **extra_context) -> None:
+    """Log performance metrics for operations that exceed the threshold.
+    
+    Args:
+        operation_name: Name of the operation being measured
+        duration_ms: Duration of the operation in milliseconds
+        logger_name: Name of the logger to use (default: 'orchestrator')
+        **extra_context: Additional context to include in the log
+    """
+    if not PERFORMANCE_LOGGING_ENABLED:
+        return
+        
+    if duration_ms >= PERFORMANCE_LOG_THRESHOLD_MS:
+        logger = LOGGERS.get(logger_name, LOGGERS['orchestrator'])
+        if logger:
+            logger.warning(
+                f"Performance alert: {operation_name} took {duration_ms:.2f}ms",
+                extra={
+                    "component": "performance",
+                    "operation": operation_name,
+                    "duration_ms": duration_ms,
+                    "threshold_ms": PERFORMANCE_LOG_THRESHOLD_MS,
+                    **extra_context
+                }
+            )
+    else:
+        # Log successful operations at debug level for analysis
+        logger = LOGGERS.get(logger_name, LOGGERS['orchestrator'])
+        if logger:
+            logger.debug(
+                f"Operation completed: {operation_name} in {duration_ms:.2f}ms",
+                extra={
+                    "component": "performance",
+                    "operation": operation_name,
+                    "duration_ms": duration_ms,
+                    **extra_context
+                }
+            )
+
+
+class PerformanceTimer:
+    """Context manager for measuring and logging operation performance.
+    
+    Usage:
+        with PerformanceTimer("database_query", logger_name="validation"):
+            # perform operation
+            result = expensive_operation()
+            
+        # Performance metrics will be automatically logged
+    """
+    
+    def __init__(self, operation_name: str, logger_name: str = 'orchestrator', **extra_context):
+        """Initialize the performance timer.
+        
+        Args:
+            operation_name: Name of the operation being measured
+            logger_name: Name of the logger to use (default: 'orchestrator')
+            **extra_context: Additional context to include in performance logs
+        """
+        self.operation_name = operation_name
+        self.logger_name = logger_name
+        self.extra_context = extra_context
+        self.start_time = None
+    
+    def __enter__(self):
+        """Start timing the operation."""
+        self.start_time = time.time() * 1000  # Convert to milliseconds
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Stop timing and log the performance metrics."""
+        if self.start_time is not None:
+            duration_ms = (time.time() * 1000) - self.start_time
+            
+            # Add exception information if an error occurred
+            if exc_type is not None:
+                self.extra_context['exception'] = exc_type.__name__
+                self.extra_context['error_occurred'] = True
+            else:
+                self.extra_context['error_occurred'] = False
+            
+            log_performance_metrics(
+                self.operation_name, 
+                duration_ms, 
+                self.logger_name, 
+                **self.extra_context
+            )
+
+
 def setup_logging() -> None:
     """Set up comprehensive logging with module-specific loggers.
     
@@ -239,50 +437,28 @@ def setup_logging() -> None:
     for different components of the orchestrator system.
     
     This provides comprehensive logging functionality throughout the orchestrator's
-    execution with appropriate log levels and structured logging.
+    execution with appropriate log levels and structured JSON logging.
+    
+    The logging system includes:
+    - Structured JSON output with contextual information
+    - Module-specific loggers with appropriate log levels
+    - Timestamped log files for easy organization
+    - Configurable log levels and formatting
     """
-    # Create .claude/logs directory if it doesn't exist
-    log_dir = Path(".claude/logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create timestamped log file name
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"orchestrator_{timestamp}.log"
-    
     # Clear any existing handlers to avoid interference
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
+    _clear_existing_handlers()
     
-    # Configure logging with enhanced format for better debugging
-    logging.basicConfig(
-        level=logging.DEBUG,  # Enable all log levels
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8')
-        ],
-        force=True  # Force reconfiguration
-    )
+    # Generate log file path
+    log_file = _generate_log_filename()
+    
+    # Configure root logger with JSON formatting
+    _configure_root_logger(log_file)
     
     # Initialize module-specific loggers
-    LOGGERS['orchestrator'] = logging.getLogger('orchestrator')
-    LOGGERS['task_tracker'] = logging.getLogger('task_tracker')
-    LOGGERS['command_executor'] = logging.getLogger('command_executor')
-    LOGGERS['validation'] = logging.getLogger('validation')
-    LOGGERS['error_handler'] = logging.getLogger('error_handler')
-    LOGGERS['usage_limit'] = logging.getLogger('usage_limit')
+    _initialize_module_loggers()
     
-    # Set appropriate log levels for different modules
-    LOGGERS['orchestrator'].setLevel(logging.INFO)
-    LOGGERS['task_tracker'].setLevel(logging.INFO)
-    LOGGERS['command_executor'].setLevel(logging.DEBUG)
-    LOGGERS['validation'].setLevel(logging.INFO)
-    LOGGERS['error_handler'].setLevel(logging.WARNING)
-    LOGGERS['usage_limit'].setLevel(logging.INFO)
-    
-    # Log that setup is complete
-    LOGGERS['orchestrator'].info("Orchestrator logging initialized with module-specific loggers")
-    LOGGERS['orchestrator'].info(f"Log file created: {log_file}")
+    # Log successful initialization
+    _log_initialization_complete(log_file)
 
 
 
@@ -440,10 +616,7 @@ def execute_tdd_cycle(command_executor: Optional[Callable[[str], Dict[str, Any]]
         
         if logger:
             logger.debug("Executing /validate command")
-        command_executor(VALIDATE_CMD)
-        
-        # Get status using injected status getter
-        status = get_status()
+        status = command_executor(VALIDATE_CMD)
     else:
         # Default behavior when no command executor is injected
         run_claude_command(CLEAR_CMD)
@@ -462,7 +635,8 @@ def execute_tdd_cycle(command_executor: Optional[Callable[[str], Dict[str, Any]]
     return status
 
 
-def handle_validation_result(validation_status: str, task: str, tracker: TaskTracker) -> bool:
+def handle_validation_result(validation_status: str, task: str, tracker: TaskTracker, 
+                           command_executor: Optional[Callable[[str], Dict[str, Any]]] = None) -> bool:
     """Handle the result of validation and determine next action.
     
     Processes validation results and executes appropriate follow-up actions based
@@ -491,11 +665,14 @@ def handle_validation_result(validation_status: str, task: str, tracker: TaskTra
     """
     if validation_status == VALIDATION_PASSED:
         # Validation passed - update the task as complete
-        project_status = execute_command_and_get_status(UPDATE_CMD)
+        if command_executor is not None:
+            project_status = command_executor(UPDATE_CMD)
+        else:
+            project_status = execute_command_and_get_status(UPDATE_CMD)
         
         # Check if project is complete
         if project_status == PROJECT_COMPLETE:
-            handle_project_completion()
+            handle_project_completion(command_executor=command_executor)
         # Continue to next task if project is incomplete
         return True
             
@@ -503,7 +680,10 @@ def handle_validation_result(validation_status: str, task: str, tracker: TaskTra
         # Validation failed - attempt correction if under retry limit
         if tracker.increment_fix_attempts(task):
             # Still under retry limit - attempt correction
-            execute_command_and_get_status(CORRECT_CMD)
+            if command_executor is not None:
+                command_executor(CORRECT_CMD)
+            else:
+                execute_command_and_get_status(CORRECT_CMD)
             # After correction, loop will re-run validation on next iteration
             return True
         else:
@@ -614,13 +794,11 @@ def execute_refactoring_loop(command_executor: Optional[Callable[[str], Dict[str
     while True:
         # Start with checkin to assess current state
         if command_executor is not None:
-            # Use dependency injection
-            command_executor(CHECKIN_CMD)
-            checkin_status = get_status()
+            # Use dependency injection - command_executor returns the status
+            checkin_status = command_executor(CHECKIN_CMD)
             
             # Run refactor analysis to identify improvement opportunities
-            command_executor(REFACTOR_CMD)
-            refactor_status = get_status()
+            refactor_status = command_executor(REFACTOR_CMD)
         else:
             # Default behavior
             checkin_status = execute_command_and_get_status(CHECKIN_CMD, debug=False)
@@ -634,8 +812,7 @@ def execute_refactoring_loop(command_executor: Optional[Callable[[str], Dict[str
         # If refactoring needed, execute finalization
         if refactor_status == REFACTORING_NEEDED:
             if command_executor is not None:
-                command_executor(FINALIZE_CMD)
-                finalize_status = get_status()
+                finalize_status = command_executor(FINALIZE_CMD)
             else:
                 finalize_status = execute_command_and_get_status(FINALIZE_CMD, debug=False)
             # Continue loop for next refactoring cycle
@@ -807,10 +984,8 @@ def _handle_project_completion_validation(validation_status: str, command_execut
     if validation_status == VALIDATION_PASSED:
         # Update to mark project complete
         if command_executor is not None:
-            # Use dependency injection - execute command then get status
-            command_executor(UPDATE_CMD)
-            get_status = status_getter if status_getter is not None else get_latest_status
-            update_status = get_status()
+            # Use dependency injection - command_executor returns the status
+            update_status = command_executor(UPDATE_CMD)
         else:
             # Default behavior
             update_status = execute_command_and_get_status(UPDATE_CMD)
@@ -883,7 +1058,7 @@ def _process_single_task_iteration(
         return False  # Should not reach here due to exits in completion handler
     else:
         # Normal task processing
-        should_continue = handle_validation_result(validation_status, task, tracker)
+        should_continue = handle_validation_result(validation_status, task, tracker, command_executor)
         return should_continue
 
 
@@ -925,6 +1100,32 @@ def execute_main_orchestration_loop(
             break
 
 
+def _command_executor_wrapper(command: str) -> Optional[str]:
+    """Wrapper for command execution in dependency injection context.
+    
+    This wrapper provides the correct behavior for the command_executor
+    dependency injection pattern. It only returns status for commands
+    that need it (/validate, /update, /checkin, /refactor, /finalize),
+    and returns None for other commands (/clear, /continue, /correct).
+    
+    Args:
+        command: The Claude command to execute
+        
+    Returns:
+        Status string for commands that need it, None otherwise
+    """
+    # Commands that need status returned
+    status_commands = {VALIDATE_CMD, UPDATE_CMD, CHECKIN_CMD, REFACTOR_CMD, FINALIZE_CMD}
+    
+    if command in status_commands:
+        # Use execute_command_and_get_status for commands that need status
+        return execute_command_and_get_status(command)
+    else:
+        # For other commands, just execute without getting status
+        run_claude_command(command)
+        return None
+
+
 def create_dependencies() -> Dependencies:
     """Factory function to create dependencies for dependency injection.
     
@@ -941,7 +1142,7 @@ def create_dependencies() -> Dependencies:
     """
     return {
         DEPENDENCY_KEYS['TASK_TRACKER']: TaskTracker(),
-        DEPENDENCY_KEYS['COMMAND_EXECUTOR']: execute_command_and_get_status,
+        DEPENDENCY_KEYS['COMMAND_EXECUTOR']: _command_executor_wrapper,
         DEPENDENCY_KEYS['LOGGER_SETUP']: setup_logging,
         DEPENDENCY_KEYS['STATUS_GETTER']: get_latest_status
     }
@@ -986,17 +1187,18 @@ def main(dependencies: Optional[Dependencies] = None) -> None:
         logger.info("=== Starting automated development orchestrator ===")
     
     # Validate prerequisites and initialize workflow (skip if all dependencies injected for testing)
-    if dependencies is None or len(dependencies) < 4:
+    # Skip validation when running with full mocked dependencies (all 4 dependencies present)
+    if dependencies_were_injected and dependencies and len(dependencies) >= 4:
+        # Skip validation when running with full mocked dependencies
+        if logger:
+            logger.info("Skipping prerequisites validation (running with injected dependencies)")
+    else:
         # Only validate prerequisites if not running with full dependency injection
         if logger:
             logger.info("Validating prerequisites...")
         validate_prerequisites()
         if logger:
             logger.info("Prerequisites validated successfully")
-    else:
-        # Skip validation when running with full mocked dependencies
-        if logger:
-            logger.info("Skipping prerequisites validation (running with injected dependencies)")
     
     # Start main orchestration loop with injected dependencies
     if logger:

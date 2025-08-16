@@ -309,7 +309,7 @@ class TestErrorHandlingConsistency:
                     
                     with patch('command_executor.LOGGERS') as mock_loggers:
                         mock_error_logger = MagicMock()
-                        mock_loggers.__getitem__.return_value = mock_error_logger
+                        mock_loggers.get.return_value = mock_error_logger
                         
                         test_command = "/validate"
                         
