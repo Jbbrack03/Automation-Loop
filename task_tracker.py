@@ -41,9 +41,9 @@ def check_file_exists(filepath: str) -> bool:
 
 
 class TaskTracker:
-    """Tracks task completion status from Implementation Plan.md file.
+    """Tracks task completion status from Implementation_Plan.md file.
     
-    This class manages task state by reading from Implementation Plan.md and
+    This class manages task state by reading from Implementation_Plan.md and
     provides failure tracking functionality to limit retry attempts on failing tasks.
     
     Attributes:
@@ -73,7 +73,7 @@ class TaskTracker:
         self._cache_misses: int = 0
     
     def _load_file_content(self) -> str:
-        """Load Implementation Plan file content with caching.
+        """Load Implementation_Plan file content with caching.
         
         This method handles file caching to minimize I/O operations. The cache
         is invalidated when the file modification time changes.
@@ -141,9 +141,9 @@ class TaskTracker:
         self._cached_mtime = None
     
     def get_next_task(self) -> Tuple[Optional[str], bool]:
-        """Get the next incomplete task from Implementation Plan.md.
+        """Get the next incomplete task from Implementation_Plan.md.
         
-        Reads the Implementation Plan.md file and finds the first task marked
+        Reads the Implementation_Plan.md file and finds the first task marked
         as incomplete (with '- [ ]' marker). This implements sequential task
         processing where tasks must be completed in order.
         
@@ -161,7 +161,7 @@ class TaskTracker:
         """
         logger = LOGGERS['task_tracker']
         
-        # Check if Implementation Plan.md exists
+        # Check if Implementation_Plan.md exists
         if not check_file_exists(IMPLEMENTATION_PLAN_FILE):
             logger.warning(f"Implementation Plan file not found: {IMPLEMENTATION_PLAN_FILE}")
             return (None, True)

@@ -64,16 +64,16 @@ class TestOrchestratorPrerequisiteFileChecks:
     
     def test_orchestrator_exits_gracefully_when_implementation_plan_missing(self, tmp_path, monkeypatch):
         """
-        Test that the orchestrator exits gracefully with an error if Implementation Plan.md is missing.
+        Test that the orchestrator exits gracefully with an error if Implementation_Plan.md is missing.
         
-        This test creates a temporary directory without the Implementation Plan.md file,
+        This test creates a temporary directory without the Implementation_Plan.md file,
         changes to that directory, and verifies that the orchestrator exits with the
         appropriate error code and message.
         
         This test will initially fail because main() doesn't implement these checks yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory where Implementation Plan.md doesn't exist
+        # Change to temporary directory where Implementation_Plan.md doesn't exist
         monkeypatch.chdir(tmp_path)
         
         # Create .claude directory to avoid ensure_settings_file issues
@@ -91,7 +91,7 @@ class TestOrchestratorPrerequisiteFileChecks:
             
             # Mock print to capture error messages
             with patch('builtins.print') as mock_print:
-                # Call main function - it should detect missing Implementation Plan.md and exit
+                # Call main function - it should detect missing Implementation_Plan.md and exit
                 import pytest
                 with pytest.raises(SystemExit):
                     main()
@@ -103,16 +103,16 @@ class TestOrchestratorPrerequisiteFileChecks:
                 mock_print.assert_called()
                 printed_messages = [str(call.args[0]) for call in mock_print.call_args_list]
                 error_message_found = any(
-                    "Implementation Plan.md" in msg or "implementation plan" in msg.lower()
+                    "Implementation_Plan.md" in msg or "implementation plan" in msg.lower()
                     for msg in printed_messages
                 )
-                assert error_message_found, f"Expected error message about missing Implementation Plan.md, got: {printed_messages}"
+                assert error_message_found, f"Expected error message about missing Implementation_Plan.md, got: {printed_messages}"
     
     def test_orchestrator_prints_warning_when_prd_md_missing(self, mock_claude_command, mock_get_latest_status, test_environment):
         """
         Test that the orchestrator prints a warning if PRD.md is missing.
         
-        This test creates a temporary directory with Implementation Plan.md present
+        This test creates a temporary directory with Implementation_Plan.md present
         but PRD.md missing, and verifies that a warning is printed.
         
         This test will initially fail because main() doesn't implement these checks yet.
@@ -147,7 +147,7 @@ class TestOrchestratorPrerequisiteFileChecks:
         """
         Test that the orchestrator prints a warning if CLAUDE.md is missing.
         
-        This test creates a temporary directory with Implementation Plan.md present
+        This test creates a temporary directory with Implementation_Plan.md present
         but CLAUDE.md missing, and verifies that a warning is printed.
         
         This test will initially fail because main() doesn't implement these checks yet.
@@ -220,7 +220,7 @@ class TestTaskTracker:
         """
         Test that TaskTracker.get_next_task correctly identifies the first incomplete task.
         
-        Given an Implementation Plan.md file with multiple tasks where some are complete
+        Given an Implementation_Plan.md file with multiple tasks where some are complete
         and some are incomplete, the get_next_task method should return the first task
         marked with [ ] (incomplete).
         
@@ -230,8 +230,8 @@ class TestTaskTracker:
         # Change to temporary directory
         monkeypatch.chdir(tmp_path)
         
-        # Create Implementation Plan.md with mixed complete/incomplete tasks
-        implementation_plan = tmp_path / "Implementation Plan.md"
+        # Create Implementation_Plan.md with mixed complete/incomplete tasks
+        implementation_plan = tmp_path / "Implementation_Plan.md"
         implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Setup
@@ -275,7 +275,7 @@ class TestTaskTracker:
         """
         Test that TaskTracker.get_next_task returns (None, True) when all tasks are complete.
         
-        Given an Implementation Plan.md file where all tasks are marked with [X] (complete),
+        Given an Implementation_Plan.md file where all tasks are marked with [X] (complete),
         the get_next_task method should return (None, True) indicating no more work to do.
         
         This test will initially fail because the TaskTracker class doesn't exist yet.
@@ -284,8 +284,8 @@ class TestTaskTracker:
         # Change to temporary directory
         monkeypatch.chdir(tmp_path)
         
-        # Create Implementation Plan.md with all tasks complete
-        implementation_plan = tmp_path / "Implementation Plan.md"
+        # Create Implementation_Plan.md with all tasks complete
+        implementation_plan = tmp_path / "Implementation_Plan.md"
         implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Setup
@@ -324,19 +324,19 @@ class TestTaskTracker:
     
     def test_get_next_task_returns_none_true_when_implementation_plan_missing(self, tmp_path, monkeypatch):
         """
-        Test that TaskTracker.get_next_task returns (None, True) when Implementation Plan.md doesn't exist.
+        Test that TaskTracker.get_next_task returns (None, True) when Implementation_Plan.md doesn't exist.
         
-        Given a directory where Implementation Plan.md file does not exist,
+        Given a directory where Implementation_Plan.md file does not exist,
         the get_next_task method should return (None, True) indicating no work can be done.
         
         This test will initially fail because the TaskTracker class doesn't exist yet.
         This is the RED phase of TDD - the test must fail first.
         """
-        # Change to temporary directory where Implementation Plan.md doesn't exist
+        # Change to temporary directory where Implementation_Plan.md doesn't exist
         monkeypatch.chdir(tmp_path)
         
-        # Ensure Implementation Plan.md does NOT exist
-        implementation_plan = tmp_path / "Implementation Plan.md"
+        # Ensure Implementation_Plan.md does NOT exist
+        implementation_plan = tmp_path / "Implementation_Plan.md"
         if implementation_plan.exists():
             implementation_plan.unlink()
         
@@ -356,8 +356,8 @@ class TestTaskTracker:
         task, all_complete = result
         
         # Verify that all_complete is True and task is None when file doesn't exist
-        assert all_complete is True, "all_complete should be True when Implementation Plan.md doesn't exist"
-        assert task is None, f"task should be None when Implementation Plan.md doesn't exist, got: {task}"
+        assert all_complete is True, "all_complete should be True when Implementation_Plan.md doesn't exist"
+        assert task is None, f"task should be None when Implementation_Plan.md doesn't exist, got: {task}"
 
 
 class TestTaskTrackerFailureTracking:
@@ -1010,7 +1010,7 @@ class TestMainOrchestrationLoop:
         Test that the main orchestration loop executes the correct TDD sequence in the happy path.
         
         This test verifies the happy path scenario where:
-        1. A task is available in Implementation Plan.md
+        1. A task is available in Implementation_Plan.md
         2. The main loop executes /clear, /continue, /validate, /update in sequence
         3. After /validate, get_latest_status returns "validation_passed"
         4. After /update, get_latest_status returns "project_incomplete" 
@@ -1158,7 +1158,7 @@ class TestRefactoringLoop:
         Test that the refactoring loop executes the complete sequence when project_complete status is returned.
         
         This test verifies the refactoring loop scenario where:
-        1. All tasks in Implementation Plan.md are complete (return project_complete after /update)
+        1. All tasks in Implementation_Plan.md are complete (return project_complete after /update)
         2. The main loop enters refactoring mode and calls /checkin
         3. Based on checkin status, it calls /refactor if refactoring is needed
         4. If refactoring tasks are found, it calls /finalize to implement them
@@ -1259,8 +1259,8 @@ class TestRefactoringLoop:
         # Change to temporary directory
         monkeypatch.chdir(tmp_path)
         
-        # Create Implementation Plan.md with all tasks complete
-        implementation_plan = tmp_path / "Implementation Plan.md"
+        # Create Implementation_Plan.md with all tasks complete
+        implementation_plan = tmp_path / "Implementation_Plan.md"
         implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Development
@@ -1350,8 +1350,8 @@ class TestRefactoringLoop:
         # Change to temporary directory
         monkeypatch.chdir(tmp_path)
         
-        # Create Implementation Plan.md with one incomplete task
-        implementation_plan = tmp_path / "Implementation Plan.md"
+        # Create Implementation_Plan.md with one incomplete task
+        implementation_plan = tmp_path / "Implementation_Plan.md"
         implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Development
@@ -2158,8 +2158,8 @@ class TestLogging:
         # Change to temporary directory
         monkeypatch.chdir(tmp_path)
         
-        # Create Implementation Plan.md with all tasks complete to ensure quick execution
-        implementation_plan = tmp_path / "Implementation Plan.md"
+        # Create Implementation_Plan.md with all tasks complete to ensure quick execution
+        implementation_plan = tmp_path / "Implementation_Plan.md"
         implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Setup

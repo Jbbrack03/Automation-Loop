@@ -84,7 +84,7 @@ def setup_temp_environment(tmp_path):
     logs_dir.mkdir()
     
     # Create required files
-    implementation_plan = tmp_path / "Implementation Plan.md"
+    implementation_plan = tmp_path / "Implementation_Plan.md"
     prd_file = tmp_path / "PRD.md"
     claude_file = tmp_path / "CLAUDE.md"
     
@@ -176,8 +176,8 @@ def test_environment(tmp_path, monkeypatch):
     logs_dir = claude_dir / "logs"
     logs_dir.mkdir()
     
-    # Create Implementation Plan.md with default content
-    implementation_plan = tmp_path / "Implementation Plan.md"
+    # Create Implementation_Plan.md with default content
+    implementation_plan = tmp_path / "Implementation_Plan.md"
     default_plan_content = "# Implementation Plan\n\n- [X] Default completed task"
     implementation_plan.write_text(default_plan_content, encoding="utf-8")
     
@@ -225,7 +225,7 @@ def main_loop_test_setup(test_environment):
     """
     env = test_environment
     
-    # Create Implementation Plan.md with multiple tasks for testing progression
+    # Create Implementation_Plan.md with multiple tasks for testing progression
     implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Development
@@ -246,10 +246,10 @@ def create_main_loop_command_mock(implementation_plan_path):
     Helper function to create a mock command handler for main loop tests.
     
     This mock simulates the /update command progressively marking tasks complete
-    by rewriting the Implementation Plan.md file.
+    by rewriting the Implementation_Plan.md file.
     
     Args:
-        implementation_plan_path: Path to the Implementation Plan.md file to modify
+        implementation_plan_path: Path to the Implementation_Plan.md file to modify
         
     Returns:
         Mock function that can be used as side_effect for run_claude_command
@@ -335,7 +335,7 @@ def refactoring_loop_test_setup(test_environment):
     """
     env = test_environment
     
-    # Create Implementation Plan.md with all tasks complete
+    # Create Implementation_Plan.md with all tasks complete
     implementation_plan_content = """# Implementation Plan
 
 ## Phase 1: Development
