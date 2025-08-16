@@ -83,10 +83,10 @@ class TestExponentialBackoffRetryLogic:
         }
         
         # Mock time.sleep to capture retry delays and verify exponential backoff
-        with patch('time.sleep') as mock_sleep, \
+        with patch('command_executor.time.sleep') as mock_sleep, \
              patch('command_executor._execute_claude_subprocess') as mock_subprocess, \
              patch('command_executor._wait_for_completion_with_context') as mock_wait, \
-             patch('random.uniform') as mock_random:
+             patch('command_executor.random.uniform') as mock_random:
             
             # Configure random jitter to be predictable for testing
             mock_random.return_value = 0.05  # 5% jitter (within 10% factor)
@@ -157,7 +157,7 @@ class TestExponentialBackoffRetryLogic:
             'jitter_factor': 0.0  # No jitter for predictable testing
         }
         
-        with patch('time.sleep') as mock_sleep, \
+        with patch('command_executor.time.sleep') as mock_sleep, \
              patch('command_executor._execute_claude_subprocess') as mock_subprocess, \
              patch('command_executor._wait_for_completion_with_context') as mock_wait:
             
@@ -199,7 +199,7 @@ class TestExponentialBackoffRetryLogic:
             'jitter_factor': 0.1
         }
         
-        with patch('time.sleep') as mock_sleep, \
+        with patch('command_executor.time.sleep') as mock_sleep, \
              patch('command_executor._execute_claude_subprocess') as mock_subprocess, \
              patch('command_executor._wait_for_completion_with_context') as mock_wait:
             
@@ -237,10 +237,10 @@ class TestExponentialBackoffRetryLogic:
             'jitter_factor': 0.2  # 20% jitter
         }
         
-        with patch('time.sleep') as mock_sleep, \
+        with patch('command_executor.time.sleep') as mock_sleep, \
              patch('command_executor._execute_claude_subprocess') as mock_subprocess, \
              patch('command_executor._wait_for_completion_with_context') as mock_wait, \
-             patch('random.uniform') as mock_random:
+             patch('command_executor.random.uniform') as mock_random:
             
             # Configure different jitter values for each retry
             mock_random.side_effect = [0.1, -0.15]  # +10%, -15% of delay
@@ -290,10 +290,10 @@ class TestExponentialBackoffRetryLogic:
         
         The test will initially fail because default retry configuration doesn't exist.
         """
-        with patch('time.sleep') as mock_sleep, \
+        with patch('command_executor.time.sleep') as mock_sleep, \
              patch('command_executor._execute_claude_subprocess') as mock_subprocess, \
              patch('command_executor._wait_for_completion_with_context') as mock_wait, \
-             patch('random.uniform') as mock_random:
+             patch('command_executor.random.uniform') as mock_random:
             
             # Configure predictable jitter for testing
             mock_random.return_value = 0.0  # No jitter for simpler verification
@@ -339,10 +339,10 @@ class TestExponentialBackoffRetryLogic:
             'jitter_factor': 0.1
         }
         
-        with patch('time.sleep') as mock_sleep, \
+        with patch('command_executor.time.sleep') as mock_sleep, \
              patch('command_executor._execute_claude_subprocess') as mock_subprocess, \
              patch('command_executor._wait_for_completion_with_context') as mock_wait, \
-             patch('random.uniform') as mock_random, \
+             patch('command_executor.random.uniform') as mock_random, \
              patch('command_executor.LOGGERS') as mock_loggers:
             
             # Configure mock logger
