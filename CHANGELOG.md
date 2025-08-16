@@ -30,6 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved error classification (retryable vs permanent failures)
   - Enhanced reliability for external command execution
 
+- **Health Checks and Monitoring** (Phase 13 Task 4)
+  - Added health check endpoint to MCP server with system metrics
+  - Implemented `HeartbeatTracker` class for monitoring long-running operations
+  - Created `MetricsCollector` for operation timing and success rate tracking
+  - All monitoring components are thread-safe with comprehensive error handling
+  - Enhanced observability for production deployments
+
+- **Graceful Shutdown Handling** (Phase 13 Task 5)
+  - Implemented signal handlers for SIGTERM/SIGINT with automatic registration
+  - Added cleanup callback support for resource cleanup on shutdown
+  - Implemented state saving functionality for crash recovery
+  - Integrated with existing logging infrastructure for shutdown events
+  - Ensures clean termination of long-running operations
+
 ### Improved
 - **Performance Enhancements**
   - Reduced file I/O operations by implementing intelligent caching
@@ -47,7 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive test suite for file I/O optimization (`test_file_io_optimization.py`)
 - Created tests for signal file efficiency improvements (`test_signal_efficiency.py`)
 - Implemented retry logic test suite (`test_retry_logic.py`)
-- All 81 tests passing with new performance features
+- Added health check tests for MCP server (`test_mcp_server.py`)
+- Created heartbeat mechanism test suite (`test_heartbeat_mechanism.py`)
+- Implemented metrics collector tests (`test_metrics_collector.py`)
+- Added graceful shutdown tests (`test_graceful_shutdown.py`)
+- All tests passing with comprehensive coverage of new features
 
 ## [1.4.0] - 2025-08-16
 

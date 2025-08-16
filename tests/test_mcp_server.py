@@ -267,3 +267,85 @@ class TestMCPStatusServerReportTool:
         actual_params.discard('self')
         
         assert expected_params.issubset(actual_params), f"report_status should accept parameters {expected_params}, got {actual_params}"
+
+
+class TestMCPStatusServerHealthCheck:
+    """Test suite for the StatusServer MCP server health check functionality."""
+    
+    def test_health_check_tool_exists_and_returns_status(self, tmp_path, monkeypatch):
+        """
+        Test that the StatusServer has a health_check tool that returns server health information.
+        
+        Given a StatusServer instance,
+        when the health_check tool is called,
+        then it should return health status information including:
+        - server status (healthy/unhealthy)
+        - uptime information
+        - last request time
+        - memory usage
+        
+        This test will initially fail because the health_check tool doesn't exist yet.
+        This is the RED phase of TDD - the test must fail first.
+        """
+        # Change to temporary directory to isolate test
+        monkeypatch.chdir(tmp_path)
+        
+        # Import StatusServer class to test
+        try:
+            from status_mcp_server import StatusServer
+        except ImportError:
+            pytest.fail("Cannot import StatusServer from status_mcp_server.py - file doesn't exist yet")
+        
+        # Create StatusServer instance
+        server = StatusServer()
+        
+        # Verify that the server has the health_check tool
+        assert hasattr(server, 'health_check'), "StatusServer should have health_check method"
+        
+        # Verify that health_check is callable
+        health_check_method = getattr(server, 'health_check')
+        assert callable(health_check_method), "health_check should be callable"
+        
+        # Mock current time for consistent testing
+        mock_start_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        mock_current_time = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
+        
+        with patch('datetime.datetime') as mock_datetime:
+            mock_datetime.now.return_value = mock_current_time
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+            
+            # Call health_check tool
+            result = server.health_check()
+        
+        # Verify that the tool returns a dictionary
+        assert isinstance(result, dict), "health_check should return a dictionary"
+        
+        # Verify required fields in health check response
+        required_fields = {"status", "uptime_seconds", "last_request_time", "memory_usage_mb"}
+        actual_fields = set(result.keys())
+        
+        assert required_fields.issubset(actual_fields), f"health_check should return fields {required_fields}, got {actual_fields}"
+        
+        # Verify field types and values
+        assert result["status"] in ["healthy", "unhealthy"], f"Status should be 'healthy' or 'unhealthy', got '{result['status']}'"
+        assert isinstance(result["uptime_seconds"], (int, float)), "uptime_seconds should be a number"
+        assert result["uptime_seconds"] >= 0, "uptime_seconds should be non-negative"
+        
+        # Verify timestamp format for last_request_time (should be ISO 8601)
+        last_request_time = result["last_request_time"]
+        if last_request_time is not None:
+            try:
+                # Should be parseable as ISO timestamp
+                parsed_time = datetime.fromisoformat(last_request_time.replace('Z', '+00:00'))
+                assert isinstance(parsed_time, datetime), "last_request_time should be valid ISO timestamp"
+            except ValueError:
+                pytest.fail(f"last_request_time '{last_request_time}' is not in valid ISO 8601 format")
+        
+        # Verify memory usage
+        assert isinstance(result["memory_usage_mb"], (int, float)), "memory_usage_mb should be a number"
+        assert result["memory_usage_mb"] > 0, "memory_usage_mb should be positive"
+        
+        # Verify server name is included if available
+        if "server_name" in result:
+            assert isinstance(result["server_name"], str), "server_name should be a string"
+            assert len(result["server_name"]) > 0, "server_name should not be empty"

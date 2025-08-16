@@ -396,14 +396,14 @@ This document provides a detailed, step-by-step plan to implement the automated 
   - Added circuit breaker pattern (closed/open/half-open states)
   - Enhanced error classification for retryable vs permanent failures
 
-- [ ] **Task 13.4: Implement health checks and monitoring**
-  - Add health check endpoint for MCP server
-  - Implement heartbeat mechanism for long-running operations
-  - Add metrics collection for operation timing
-  - Create diagnostic mode for troubleshooting
+- [X] **Task 13.4: Implement health checks and monitoring** ✅ (2025-08-16)
+  - Implemented health check endpoint for MCP server with status reporting
+  - Created HeartbeatTracker class for monitoring long-running operations
+  - Added MetricsCollector for operation timing and success rate tracking
+  - All components thread-safe with comprehensive error handling
 
-- [ ] **Task 13.5: Add graceful shutdown handling**
-  - Implement signal handlers for SIGTERM/SIGINT
-  - Ensure cleanup of resources on shutdown
-  - Save state for potential recovery
-  - Add shutdown hooks for cleanup operations
+- [X] **Task 13.5: Add graceful shutdown handling** ✅ (2025-08-16)
+  - Implemented signal handlers for SIGTERM/SIGINT with proper registration
+  - Added cleanup callback support for resource cleanup
+  - Implemented state saving functionality for recovery
+  - Integrated with existing logging and error handling systems

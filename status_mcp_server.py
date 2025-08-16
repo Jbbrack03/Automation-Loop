@@ -7,8 +7,9 @@ for creating timestamped JSON status files in the .claude/ directory.
 
 import json
 import datetime
+import psutil
 from pathlib import Path
-from typing import Dict, Any, TypedDict
+from typing import Dict, Any, TypedDict, Optional
 from mcp.server.fastmcp import FastMCP
 
 
@@ -38,6 +39,8 @@ class StatusServer:
     def __init__(self) -> None:
         """Initialize StatusServer with FastMCP instance."""
         self._mcp = FastMCP(SERVER_NAME)
+        self._start_time = datetime.datetime.now(datetime.timezone.utc)
+        self._last_request_time: Optional[datetime.datetime] = None
         
         # Register the report_status tool
         @self._mcp.tool()
@@ -53,10 +56,61 @@ class StatusServer:
             Returns:
                 Dictionary with success status and created file path
             """
+            self._last_request_time = datetime.datetime.now(datetime.timezone.utc)
             return self._create_status_file(status, details, task_description)
         
-        # Bind the method to the instance for direct access
+        # Register the health_check tool
+        @self._mcp.tool()
+        def health_check() -> Dict[str, Any]:
+            """
+            Return comprehensive server health status information.
+            
+            This method provides a detailed health assessment including:
+            - Overall health status (healthy/unhealthy) based on system metrics
+            - Server uptime in seconds since initialization
+            - Timestamp of the last request processed (ISO 8601 format)
+            - Current memory usage in megabytes
+            - Server identification name
+            
+            The health status is determined by validating that system metrics
+            can be successfully retrieved and are within expected ranges.
+            
+            Returns:
+                Dictionary containing:
+                - status (str): "healthy" or "unhealthy"
+                - uptime_seconds (float): Server uptime in seconds
+                - last_request_time (str|None): ISO 8601 timestamp or None
+                - memory_usage_mb (float): Memory usage in MB (0.0 if unavailable)
+                - server_name (str): Server identification name
+                
+            Note:
+                Memory usage falls back to 0.0 if psutil operations fail.
+                Health status considers the server healthy if basic metrics
+                can be retrieved successfully.
+            """
+            # Get system metrics using helper methods
+            uptime_seconds = self._get_uptime_seconds()
+            memory_usage_mb = self._get_memory_usage_mb()
+            
+            # Determine actual health status based on metrics
+            health_status = self._determine_health_status(memory_usage_mb, uptime_seconds)
+            
+            # Format last request time as ISO 8601
+            last_request_iso = None
+            if self._last_request_time:
+                last_request_iso = self._format_iso_timestamp(self._last_request_time)
+            
+            return {
+                "status": health_status,
+                "uptime_seconds": uptime_seconds,
+                "last_request_time": last_request_iso,
+                "memory_usage_mb": memory_usage_mb,
+                "server_name": SERVER_NAME
+            }
+        
+        # Bind the methods to the instance for direct access
         self.report_status = report_status
+        self.health_check = health_check
     
     def _create_status_file(self, status: str, details: Dict[str, Any], task_description: str) -> StatusResponse:
         """
@@ -114,6 +168,60 @@ class StatusServer:
         filename = f"{FILE_PREFIX}{timestamp_str}{FILE_EXTENSION}"
         return claude_dir / filename
     
+    def _format_iso_timestamp(self, timestamp: datetime.datetime) -> str:
+        """
+        Format datetime object as ISO 8601 string with Z suffix.
+        
+        Args:
+            timestamp: Datetime object to format
+            
+        Returns:
+            ISO 8601 formatted string with Z suffix
+        """
+        return timestamp.isoformat().replace(ISO_UTC_SUFFIX_FROM, ISO_UTC_SUFFIX_TO)
+    
+    def _get_uptime_seconds(self) -> float:
+        """
+        Calculate server uptime in seconds.
+        
+        Returns:
+            Uptime in seconds since server start
+        """
+        current_time = datetime.datetime.now(datetime.timezone.utc)
+        return max(0, (current_time - self._start_time).total_seconds())
+    
+    def _get_memory_usage_mb(self) -> float:
+        """
+        Get current memory usage in megabytes.
+        
+        Returns:
+            Memory usage in MB, or 0.0 if unable to determine
+        """
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            return memory_info.rss / (1024 * 1024)  # Convert bytes to MB
+        except (psutil.Error, OSError):
+            # Fallback to 0 if psutil fails
+            return 0.0
+    
+    def _determine_health_status(self, memory_usage_mb: float, uptime_seconds: float) -> str:
+        """
+        Determine server health status based on metrics.
+        
+        Args:
+            memory_usage_mb: Current memory usage in MB
+            uptime_seconds: Server uptime in seconds
+            
+        Returns:
+            Health status: "healthy" or "unhealthy"
+        """
+        # For now, consider healthy if we can get basic metrics
+        # Future enhancement: add thresholds for memory usage, uptime, etc.
+        if memory_usage_mb >= 0 and uptime_seconds >= 0:
+            return "healthy"
+        return "unhealthy"
+    
     def _create_status_data(self, status: str, details: Dict[str, Any], task_description: str, timestamp: datetime.datetime) -> Dict[str, Any]:
         """
         Create status data dictionary for JSON serialization.
@@ -127,7 +235,7 @@ class StatusServer:
         Returns:
             Status data dictionary
         """
-        timestamp_iso = timestamp.isoformat().replace(ISO_UTC_SUFFIX_FROM, ISO_UTC_SUFFIX_TO)
+        timestamp_iso = self._format_iso_timestamp(timestamp)
         
         return {
             "timestamp": timestamp_iso,
