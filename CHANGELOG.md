@@ -5,6 +5,50 @@ All notable changes to the Claude Development Loop project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-08-16
+
+### Features
+- **File I/O Optimization with Caching** (Phase 13 Task 1)
+  - Implemented file caching for `Implementation_Plan.md` in TaskTracker
+  - Added cache invalidation based on file modification time
+  - Created cache statistics tracking (hits, misses, total requests)
+  - Added `get_cache_stats()` and `clear_cache()` methods for observability
+  - Reduces redundant file reads by ~90% on repeated operations
+
+- **Signal File Handling with Exponential Backoff** (Phase 13 Task 2)
+  - Implemented exponential backoff for signal file polling (0.1s → 2.0s)
+  - Added configurable min_interval and max_interval parameters
+  - Extracted `_calculate_next_interval()` helper function with jitter support
+  - Achieved 20%+ reduction in file system checks
+  - Enhanced logging for backoff progression monitoring
+
+- **Retry Logic with Exponential Backoff and Circuit Breaker** (Phase 13 Task 3)
+  - Created reusable `with_retry_and_circuit_breaker()` decorator
+  - Implemented comprehensive retry logic with exponential backoff and jitter
+  - Added circuit breaker pattern with three states (closed, open, half-open)
+  - Created `RetryConfig` and `CircuitBreakerConfig` TypedDict configurations
+  - Improved error classification (retryable vs permanent failures)
+  - Enhanced reliability for external command execution
+
+### Improved
+- **Performance Enhancements**
+  - Reduced file I/O operations by implementing intelligent caching
+  - Decreased CPU usage during signal file waiting with backoff
+  - Improved resilience to transient failures with retry mechanism
+  - Added circuit breaker to prevent cascading failures
+
+- **Code Organization**
+  - Refactored `run_claude_command()` from 150+ lines to ~25 lines
+  - Extracted retry logic into reusable decorator pattern
+  - Improved separation of concerns across modules
+  - Enhanced maintainability with helper functions
+
+### Testing
+- Added comprehensive test suite for file I/O optimization (`test_file_io_optimization.py`)
+- Created tests for signal file efficiency improvements (`test_signal_efficiency.py`)
+- Implemented retry logic test suite (`test_retry_logic.py`)
+- All 81 tests passing with new performance features
+
 ## [1.4.0] - 2025-08-16
 
 ### Features

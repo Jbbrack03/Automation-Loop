@@ -6,6 +6,7 @@ Signal files are used to detect command completion in the automated workflow.
 
 import logging
 import os
+import random
 import time
 from pathlib import Path
 from typing import Union, Optional
@@ -18,18 +19,74 @@ def _get_logger() -> Optional[logging.Logger]:
     return LOGGERS.get('command_executor')
 
 
+def _calculate_next_interval(iteration: int, min_interval: float, max_interval: float, 
+                           jitter: bool = False) -> float:
+    """Calculate the next polling interval using exponential backoff.
+    
+    Implements exponential backoff with optional jitter to reduce CPU usage
+    and prevent thundering herd issues when multiple processes are waiting.
+    
+    Args:
+        iteration: Current iteration number (0-based)
+        min_interval: Initial interval in seconds
+        max_interval: Maximum interval cap in seconds
+        jitter: Whether to add random jitter (±10%) to prevent thundering herd
+        
+    Returns:
+        Next interval duration in seconds
+        
+    Algorithm:
+        - First 4 iterations: min_interval * (2 ^ iteration)
+        - 5th iteration and beyond: max_interval
+        - Optional jitter adds ±10% randomization
+        
+    Example:
+        With min_interval=0.1, max_interval=2.0:
+        - Iteration 0: 0.1s
+        - Iteration 1: 0.2s  
+        - Iteration 2: 0.4s
+        - Iteration 3: 0.8s
+        - Iteration 4+: 2.0s
+    """
+    if iteration < 4:
+        # Exponential backoff: double the interval each iteration
+        interval = min_interval * (2 ** iteration)
+    else:
+        # Cap at maximum interval after 4 iterations
+        interval = max_interval
+    
+    # Ensure we don't exceed the maximum interval during exponential phase
+    interval = min(interval, max_interval)
+    
+    # Add jitter if requested (±10% randomization)
+    if jitter:
+        jitter_factor = 1.0 + random.uniform(-0.1, 0.1)
+        interval = interval * jitter_factor
+        # Re-apply max_interval cap after jitter
+        interval = min(interval, max_interval)
+    
+    return interval
+
+
 def wait_for_signal_file(signal_file_path: Union[str, Path], timeout: float = SIGNAL_WAIT_TIMEOUT, 
-                        sleep_interval: float = SIGNAL_WAIT_SLEEP_INTERVAL,
+                        sleep_interval: float = None,
+                        min_interval: float = 0.1,
+                        max_interval: float = 2.0,
+                        jitter: bool = False,
                         debug: bool = False) -> None:
     """Wait for signal file to appear with timeout and error handling.
     
     This function implements robust signal file waiting with timeout protection
-    and structured logging. It's used to wait for Claude CLI command completion signals.
+    and structured logging. It uses exponential backoff to reduce CPU usage
+    and optional jitter to prevent thundering herd issues.
     
     Args:
         signal_file_path: Path to the signal file to wait for (str or Path object)
         timeout: Maximum seconds to wait before raising TimeoutError
-        sleep_interval: Seconds to sleep between file existence checks
+        sleep_interval: Deprecated. Use min_interval and max_interval instead
+        min_interval: Initial seconds to sleep between file existence checks
+        max_interval: Maximum seconds to sleep between file existence checks
+        jitter: Whether to add random jitter (±10%) to backoff intervals
         debug: Whether to enable debug-level logging
         
     Raises:
@@ -39,14 +96,27 @@ def wait_for_signal_file(signal_file_path: Union[str, Path], timeout: float = SI
     Note:
         This function will remove the signal file after it appears to clean up
         the file system state for subsequent command executions.
+        
+    Backoff Algorithm:
+        Uses exponential backoff starting from min_interval, doubling each iteration
+        until max_interval is reached. Optional jitter prevents thundering herd.
     """
     logger = _get_logger()
+    
+    # Handle backward compatibility
+    if sleep_interval is not None:
+        current_interval = sleep_interval
+        use_exponential_backoff = False
+    else:
+        current_interval = min_interval
+        use_exponential_backoff = True
     
     if logger:
         logger.debug(f"Waiting for signal file: {signal_file_path} (timeout: {timeout}s)")
     
     start_time = time.time()
     elapsed_time = 0.0
+    iterations = 0
     
     while elapsed_time < timeout:
         if os.path.exists(str(signal_file_path)):
@@ -64,8 +134,25 @@ def wait_for_signal_file(signal_file_path: Union[str, Path], timeout: float = SI
                     logger.warning(f"Failed to remove signal file: {e}")
                 return
         
-        time.sleep(sleep_interval)
+        # Calculate interval using exponential backoff
+        if use_exponential_backoff:
+            current_interval = _calculate_next_interval(
+                iterations, min_interval, max_interval, jitter
+            )
+            
+            # Log backoff progression for observability
+            if logger and debug:
+                if iterations == 0:
+                    logger.debug(f"Starting exponential backoff: min={min_interval}s, max={max_interval}s, jitter={jitter}")
+                
+                if current_interval == max_interval and iterations >= 4:
+                    logger.debug(f"Backoff reached maximum interval: {current_interval}s (iteration {iterations})")
+                else:
+                    logger.debug(f"Backoff interval: {current_interval:.3f}s (iteration {iterations})")
+        
+        time.sleep(current_interval)
         elapsed_time = time.time() - start_time
+        iterations += 1
     
     # Timeout reached - this indicates a potential issue with Claude CLI execution
     error_msg = f"Signal file {signal_file_path} did not appear within {timeout}s timeout"

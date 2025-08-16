@@ -48,9 +48,17 @@ class TaskTracker:
     
     Attributes:
         fix_attempts: Dictionary tracking failure count per task identifier
+        _cached_content: Cached file content to minimize I/O operations
+        _cached_mtime: Cached file modification time for cache invalidation
+        _cache_hits: Number of cache hits for observability
+        _cache_misses: Number of cache misses for observability
     """
     
     fix_attempts: Dict[str, int]
+    _cached_content: Optional[str]
+    _cached_mtime: Optional[float]
+    _cache_hits: int
+    _cache_misses: int
     
     def __init__(self) -> None:
         """Initialize TaskTracker with failure tracking.
@@ -59,6 +67,78 @@ class TaskTracker:
         during execution. Each task can have up to MAX_FIX_ATTEMPTS retries.
         """
         self.fix_attempts: Dict[str, int] = {}
+        self._cached_content: Optional[str] = None
+        self._cached_mtime: Optional[float] = None
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
+    
+    def _load_file_content(self) -> str:
+        """Load Implementation Plan file content with caching.
+        
+        This method handles file caching to minimize I/O operations. The cache
+        is invalidated when the file modification time changes.
+        
+        Returns:
+            The file content as a string
+            
+        Raises:
+            FileNotFoundError: If the file does not exist
+            PermissionError: If permission is denied
+            UnicodeDecodeError: If file has encoding issues
+            IOError, OSError: For other file-related errors
+        """
+        logger = LOGGERS['task_tracker']
+        
+        # Get current file modification time
+        current_mtime = os.path.getmtime(IMPLEMENTATION_PLAN_FILE)
+        
+        # Check if we need to read the file (cache miss or invalidation)
+        if self._cached_content is None or self._cached_mtime != current_mtime:
+            # Cache miss or invalidation - read file content
+            with open(IMPLEMENTATION_PLAN_FILE, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Update cache
+            self._cached_content = content
+            self._cached_mtime = current_mtime
+            self._cache_misses += 1
+            
+            logger.debug(f"Cache miss: File content loaded and cached with mtime {current_mtime} "
+                        f"(total misses: {self._cache_misses})")
+        else:
+            # Cache hit - use cached content
+            content = self._cached_content
+            self._cache_hits += 1
+            
+            logger.debug(f"Cache hit: Using cached file content "
+                        f"(total hits: {self._cache_hits})")
+        
+        return content
+    
+    def get_cache_stats(self) -> Dict[str, int]:
+        """Get cache statistics for monitoring and debugging.
+        
+        Returns:
+            Dictionary containing cache hit and miss counts
+        """
+        return {
+            'cache_hits': self._cache_hits,
+            'cache_misses': self._cache_misses,
+            'total_requests': self._cache_hits + self._cache_misses
+        }
+    
+    def clear_cache(self) -> None:
+        """Clear the file content cache.
+        
+        This method forces the next call to get_next_task() to reload
+        the file from disk. Useful for testing or when you know the
+        file has been modified externally.
+        """
+        logger = LOGGERS['task_tracker']
+        logger.debug("Manually clearing file content cache")
+        
+        self._cached_content = None
+        self._cached_mtime = None
     
     def get_next_task(self) -> Tuple[Optional[str], bool]:
         """Get the next incomplete task from Implementation Plan.md.
@@ -66,6 +146,9 @@ class TaskTracker:
         Reads the Implementation Plan.md file and finds the first task marked
         as incomplete (with '- [ ]' marker). This implements sequential task
         processing where tasks must be completed in order.
+        
+        Uses file caching to minimize I/O operations. The cache is invalidated
+        when the file modification time changes.
         
         Returns:
             Tuple of (task_line, all_complete) where:
@@ -84,10 +167,12 @@ class TaskTracker:
             return (None, True)
         
         try:
-            with open(IMPLEMENTATION_PLAN_FILE, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            # Load file content using cached helper method
+            content = self._load_file_content()
             
-            logger.debug(f"Reading {len(lines)} lines from {IMPLEMENTATION_PLAN_FILE}")
+            # Parse file content
+            lines = content.splitlines()
+            logger.debug(f"Processing {len(lines)} lines from file content")
             
             # Look for first incomplete task using marker constant
             for i, line in enumerate(lines):
@@ -103,19 +188,15 @@ class TaskTracker:
             return (None, True)
             
         except FileNotFoundError as e:
-            # Should not happen since we check file existence above, but handle gracefully
             logger.error(f"Implementation Plan file not found during read: {e}")
             return (None, True)
         except PermissionError as e:
-            # File exists but permission denied
             logger.error(f"Permission denied reading Implementation Plan file: {e}")
             return (None, True)
         except UnicodeDecodeError as e:
-            # File has encoding issues
             logger.error(f"Encoding error reading Implementation Plan file: {e}")
             return (None, True)
         except (IOError, OSError) as e:
-            # Other file-related errors
             logger.error(f"I/O error reading Implementation Plan file: {e}")
             return (None, True)
     
