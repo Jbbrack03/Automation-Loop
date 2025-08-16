@@ -125,9 +125,10 @@ class TestFileIOOptimization:
 - [ ] Write integration tests
 """
         plan_file.write_text(modified_content, encoding='utf-8')
-        
-        # Add a small delay to ensure mtime difference is detectable
-        time.sleep(0.01)
+
+        # Explicitly update the mtime so the change is detected on all platforms
+        forced_mtime = os.path.getmtime(plan_file) + 1
+        os.utime(plan_file, (forced_mtime, forced_mtime))
         
         with patch('builtins.open', side_effect=mock_file_open):
             # Reset file read counter for this part of the test
