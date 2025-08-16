@@ -23,7 +23,7 @@ import json
 # FILE PATHS
 # =============================================================================
 # Core project files and directories
-IMPLEMENTATION_PLAN_FILE = "Implementation Plan.md"
+IMPLEMENTATION_PLAN_FILE = "Implementation_Plan.md"
 PRD_FILE = "PRD.md"
 CLAUDE_FILE = "CLAUDE.md"
 SIGNAL_FILE = ".claude/signal_task_complete"

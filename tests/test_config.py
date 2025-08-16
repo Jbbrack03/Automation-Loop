@@ -42,7 +42,7 @@ class TestConfigModule:
         
         # Test file path constants exist and have correct values
         expected_file_paths = {
-            'IMPLEMENTATION_PLAN_FILE': "Implementation Plan.md",
+            'IMPLEMENTATION_PLAN_FILE': "Implementation_Plan.md",
             'PRD_FILE': "PRD.md", 
             'CLAUDE_FILE': "CLAUDE.md",
             'SIGNAL_FILE': ".claude/signal_task_complete",
