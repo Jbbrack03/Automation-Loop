@@ -154,7 +154,7 @@ All 73 tests passing with structured logging, performance monitoring, and log ro
 ### Key Features
 - Full TDD implementation with multi-agent orchestration
 - Resilient state management with automatic failure recovery
-- Comprehensive logging with 6 module-specific loggers
+- **Structured JSON logging with rotation and performance metrics**
 - Complete documentation (README.md, CHANGELOG.md)
 - Production-ready with robust error handling
 - Modular architecture with separated concerns:
@@ -162,3 +162,4 @@ All 73 tests passing with structured logging, performance monitoring, and log ro
   - `usage_limit.py` - API limit handling
   - `signal_handler.py` - Signal file operations
   - `command_executor.py` - Command execution logic
+  - **Enhanced logging with JSON format, rotation, and performance monitoring**
