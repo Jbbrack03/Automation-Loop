@@ -316,21 +316,19 @@ class TestModuleExtraction:
         
         # When: We test basic function behavior
         # Then: Functions should maintain their original interfaces
-        
+
         # Test usage_limit functions accept expected parameters
         try:
             # This will fail until actual implementation, but tests the interface
             result = usage_limit.parse_usage_limit_error("test error message")
             assert isinstance(result, dict), "parse_usage_limit_error should return dict"
-        except Exception:
-            # Expected to fail until implementation
-            pass
-        
+        except Exception as e:
+            pytest.fail(f"parse_usage_limit_error raised an exception: {e}")
+
         try:
-            # Test that calculate_wait_time accepts dict parameter
-            test_info = {"format": "test"}
+            # Test that calculate_wait_time accepts valid parsed info
+            test_info = {"reset_at": 1737000000, "format": "unix_timestamp"}
             result = usage_limit.calculate_wait_time(test_info)
             assert isinstance(result, int), "calculate_wait_time should return int"
-        except Exception:
-            # Expected to fail until implementation
-            pass
+        except Exception as e:
+            pytest.fail(f"calculate_wait_time raised an exception: {e}")
