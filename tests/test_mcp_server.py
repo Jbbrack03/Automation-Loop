@@ -70,7 +70,7 @@ class TestMCPStatusServerReportTool:
         
         # Mock current time for consistent testing
         mock_timestamp = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
-        with patch('datetime.datetime') as mock_datetime:
+        with patch('status_mcp_server.datetime.datetime') as mock_datetime:
             mock_datetime.now.return_value = mock_timestamp
             mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
             
@@ -176,7 +176,7 @@ class TestMCPStatusServerReportTool:
         for i, test_case in enumerate(test_cases):
             # Mock different timestamps for each call
             mock_timestamp = datetime(2024, 1, 15, 10, 30, 45 + i, tzinfo=timezone.utc)
-            with patch('datetime.datetime') as mock_datetime:
+            with patch('status_mcp_server.datetime.datetime') as mock_datetime:
                 mock_datetime.now.return_value = mock_timestamp
                 mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
                 
@@ -310,7 +310,7 @@ class TestMCPStatusServerHealthCheck:
         mock_start_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
         mock_current_time = datetime(2024, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
         
-        with patch('datetime.datetime') as mock_datetime:
+        with patch('status_mcp_server.datetime.datetime') as mock_datetime:
             mock_datetime.now.return_value = mock_current_time
             mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
             
